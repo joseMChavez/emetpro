@@ -48,6 +48,31 @@
   let prepared = $state<OutputContent>({ kind: "empty" });
   let error = $state<Message | null>(null);
   let busy = $state(false);
+
+  // Video que este equipo no reproduce (HEVC de iPhone…): se ofrece convertirlo a MP4 (media/video.rs).
+  let unplayable = $state<string | null>(null);
+  let convertingVideo = $state(false);
+
+  /** Ese contenido usa el video (como contenido o como fondo). */
+  function usesVideo(content: OutputContent, path: string): boolean {
+    if (content.kind === "video") return content.path === path;
+    if ((content.kind === "text" || content.kind === "timer") && content.background === path) return true;
+    return output.style.backgroundImage === path && (content.kind === "text" || content.kind === "scripture" || content.kind === "timer" || content.kind === "clock" || content.kind === "empty");
+  }
+
+  async function convertVideo() {
+    if (!unplayable || convertingVideo) return;
+    convertingVideo = true;
+    try {
+      await platform.convertVideo(unplayable);
+      unplayable = null;
+      error = null;
+    } catch (e) {
+      error = toMessage(e);
+    } finally {
+      convertingVideo = false;
+    }
+  }
   let pdfPages = $state<Record<string, number>>({});
   /** Los dos hilos: Proyección (Biblia, Textos, Medios) y Transmisión (OBS); y los Ajustes, que no se recuerdan. */
   let view = $state<"projection" | "stream" | "settings">(settings.view);
@@ -583,6 +608,17 @@
       {/each}
     </section>
 
+    {#snippet videoFix(content: OutputContent)}
+      {#if unplayable && usesVideo(content, unplayable)}
+        <div class="video-fix" role="status">
+          <p>{t("video.unplayable", { name: baseName(unplayable) })}</p>
+          <button class="btn primary" onclick={convertVideo} disabled={convertingVideo}>
+            {convertingVideo ? t("video.converting") : t("video.convert")}
+          </button>
+        </div>
+      {/if}
+    {/snippet}
+
     <!-- Vista previa y En pantalla en pestañas: siempre a la vista junto al contenido, sin confundirse. Al preparar algo
          nuevo se abre la vista previa; al enviarlo, lo que está en pantalla. -->
     <section class="card stage">
@@ -598,10 +634,11 @@
       </div>
       <div class="card-body stack" role="tabpanel" id="pane-prepared" aria-labelledby="tab-prepared" hidden={stageTab !== "prepared"}>
         <div class="screen preview">
-          <OutputView content={prepared} style={output.style} preview animated={stageTab === "prepared" && !expanded} playing={stageTab === "prepared" && !expanded} marking={markTool.on} onmark={(part, from, to) => markWords("prepared", part, from, to)} />
+          <OutputView content={prepared} style={output.style} preview animated={stageTab === "prepared" && !expanded} playing={stageTab === "prepared" && !expanded} marking={markTool.on} onmark={(part, from, to) => markWords("prepared", part, from, to)} onunplayable={(path) => (unplayable = path)} />
           <span class="screen-tag">{t("stage.previewTag")}</span>
         </div>
         <MarkTools content={prepared} saved={fromPlan(prepared)} onclear={() => clearWords("prepared")} />
+        {@render videoFix(prepared)}
         {#if prepared.kind === "empty"}
           <p class="muted">{t("prepared.empty")}</p>
         {/if}
@@ -620,10 +657,11 @@
       </div>
       <div class="card-body stack" role="tabpanel" id="pane-live" aria-labelledby="tab-live" hidden={stageTab !== "live"}>
         <div class="screen live">
-          <OutputView content={output.content} style={output.style} preview animated={stageTab === "live" && !expanded} playing={stageTab === "live" && !expanded && output.open} follow={videoTime} marking={markTool.on} onmark={(part, from, to) => markWords("live", part, from, to)} />
+          <OutputView content={output.content} style={output.style} preview animated={stageTab === "live" && !expanded} playing={stageTab === "live" && !expanded && output.open} follow={videoTime} marking={markTool.on} onmark={(part, from, to) => markWords("live", part, from, to)} onunplayable={(path) => (unplayable = path)} />
           <span class="screen-tag live">{output.open ? t("live.badge") : t("live.closedBadge")}</span>
         </div>
         <MarkTools content={output.content} saved={fromPlan(output.content)} onclear={() => clearWords("live")} />
+        {@render videoFix(output.content)}
         {#if !output.open}<p class="muted small">{t(selected ? "live.autoOpenHint" : "live.closedHint")}</p>{/if}
 
         {#if livePosition}
@@ -878,6 +916,17 @@
   .stack { display: flex; flex-direction: column; gap: 12px; }
 
   .nav-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .video-fix {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-2);
+  }
+  .video-fix p { flex: 1 1 220px; margin: 0; font-size: 14px; }
   .position { font-weight: 600; font-variant-numeric: tabular-nums; text-align: center; }
   .send { width: 100%; margin-top: auto; }
   .quick { display: flex; flex-wrap: wrap; gap: 8px; }

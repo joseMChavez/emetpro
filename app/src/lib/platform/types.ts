@@ -218,6 +218,7 @@ export type CommandError =
   | { code: "storage"; message: string }
   | { code: "officeNotInstalled" }
   | { code: "conversionFailed"; file: string; reason: string }
+  | { code: "videoConverterMissing" }
   | { code: "officeBusy" }
   | { code: "officeCanceled" }
   | { code: "officeDownload"; message: string }
@@ -367,6 +368,12 @@ export interface Platform {
   /** Borra la copia privada (no un LibreOffice del sistema). */
   officeRemove(): Promise<void>;
   onOfficeProgress(handler: (progress: OfficeProgress) => void): Promise<() => void>;
+  /** Lo que se carga para un video: su copia en MP4 si ya se convirtió, si no el mismo archivo. */
+  playableVideo(path: string): Promise<string>;
+  /** Convierte a MP4 H.264 un video que este equipo no reproduce (HEVC de iPhone…); devuelve la copia. */
+  convertVideo(path: string): Promise<string>;
+  /** Un video ya tiene copia convertida (llega la ruta del original), desde cualquier ventana. */
+  onVideoConverted(handler: (path: string) => void): Promise<() => void>;
   /** URL que el webview puede cargar para un archivo local ya permitido. */
   mediaUrl(path: string): string;
   reportOutputError(message: string): Promise<void>;

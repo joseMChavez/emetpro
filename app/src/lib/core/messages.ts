@@ -23,6 +23,7 @@ export function toMessage(e: unknown): Message {
     case "obs": return { key: "error.obs", params: { message: err.message } };
     case "officeNotInstalled": return { key: "error.officeNotInstalled" };
     case "conversionFailed": return { key: "error.conversionFailed", params: { file: err.file, reason: err.reason } };
+    case "videoConverterMissing": return { key: "error.videoConverterMissing" };
     case "officeBusy": return { key: "error.officeBusy" };
     case "officeCanceled": return { key: "error.officeCanceled" };
     case "importFailed": return { key: "error.importFailed", params: { file: err.file, reason: err.reason } };

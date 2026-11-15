@@ -83,6 +83,7 @@
   import { sheetPaper } from "$lib/features/remote/board.svelte";
   import { currentMarks, MARK_HEX, segments, words as wordsOf, type MarkPart, type WordMark } from "$lib/features/marks/marks";
   import { animationOf, isVideo, NO_ANIMATION } from "$lib/features/output/animation";
+  import { playablePath } from "$lib/features/output/playable.svelte";
   import { cubicOut } from "svelte/easing";
 
   let {
@@ -98,6 +99,7 @@
     follow = null,
     onvideotime,
     animated = false,
+    onunplayable,
   }: {
     content: OutputContent;
     style?: OutputStyle;
@@ -118,6 +120,8 @@
     /** Resaltar palabras (D-023): las palabras se pueden tocar, y arrastrar para marcar varias. */
     marking?: boolean;
     onmark?: (part: MarkPart, from: number, to: number) => void;
+    /** Este equipo no puede reproducir ese video (el principal o el de fondo): la consola ofrece convertirlo. */
+    onunplayable?: (path: string) => void;
   } = $props();
 
   /** Palabras que se están marcando con el dedo o el ratón, antes de soltar. */
@@ -161,7 +165,11 @@
   let height = $state(0);
   let now = $state(Date.now());
 
-  let src = $derived("path" in content ? platform.mediaUrl(content.path) : "");
+  let src = $derived.by(() => {
+    if (!("path" in content)) return "";
+    const path = content.kind === "video" ? playablePath(content.path) : content.path;
+    return path ? platform.mediaUrl(path) : "";
+  });
   let name = $derived(("path" in content ? content.path.split(/[\\/]/).pop() : "") ?? "");
 
   let lyric = $derived.by(() => {
@@ -219,7 +227,8 @@
     if (!lyric && !clock && content.kind !== "empty") return null;
     return ((content.kind === "text" || content.kind === "timer") && content.background) || style.backgroundImage || null;
   });
-  let backdrop = $derived(backdropPath ? platform.mediaUrl(backdropPath) : null);
+  let backdropFile = $derived(backdropPath ? playablePath(backdropPath) : null);
+  let backdrop = $derived(backdropFile ? platform.mediaUrl(backdropFile) : null);
   /** Un fondo de video va en bucle y sin sonido; en las miniaturas se ve su primer cuadro. */
   let backdropVideo = $derived(backdropPath !== null && isVideo(backdropPath));
 
@@ -274,8 +283,15 @@
 
   function videoError() {
     // 4 = MEDIA_ERR_SRC_NOT_SUPPORTED: suele indicar que falta el códec en el sistema.
-    const hint = video?.error?.code === 4 ? ` ${t("error.codec")}` : "";
+    const code = video?.error?.code;
+    const hint = code === 4 ? ` ${t("error.codec")}` : "";
     onerror?.(t("error.video", { name }) + hint);
+    if (content.kind === "video") unplayable(content.path, code);
+  }
+
+  /** 3 = no se pudo decodificar, 4 = formato o códec no soportado. Si ya es la copia convertida, no hay más que ofrecer. */
+  function unplayable(path: string, code: number | undefined) {
+    if ((code === 3 || code === 4) && playablePath(path) === path) onunplayable?.(path);
   }
 
   /** Siguiendo la pantalla: la posición del video allí, contando lo que pasó desde el aviso. */
@@ -404,7 +420,16 @@
   {#if backdrop}
     {#if backdropVideo}
       <!-- svelte-ignore a11y_media_has_caption -->
-      <video class="backdrop" src={backdrop} muted loop playsinline autoplay={animated} preload={animated ? "auto" : "metadata"}></video>
+      <video
+        class="backdrop"
+        src={backdrop}
+        muted
+        loop
+        playsinline
+        autoplay={animated}
+        preload={animated ? "auto" : "metadata"}
+        onerror={(e) => backdropPath && unplayable(backdropPath, (e.currentTarget as HTMLVideoElement).error?.code)}
+      ></video>
     {:else}
       <img class="backdrop" class:drift={anim.background === "slow"} src={backdrop} alt="" />
     {/if}
@@ -450,7 +475,7 @@
     </div>
   {:else if content.kind === "image"}
     <img {src} alt="" onerror={() => onerror?.(t("error.image", { name }))} />
-  {:else if content.kind === "video"}
+  {:else if content.kind === "video" && src}
     {#key src}
       <!-- svelte-ignore a11y_media_has_caption -->
       <video

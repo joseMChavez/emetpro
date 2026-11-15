@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter, Manager};
 
 use super::domain::{
     media_kind, MediaFile, MediaKind, IMAGE_EXTENSIONS, PDF_EXTENSIONS, PRESENTATION_EXTENSIONS,
     VIDEO_EXTENSIONS,
 };
-use super::scan;
+use super::{scan, video};
 use crate::core::assets::allow_media;
 use crate::core::error::{internal, CommandError};
 use crate::core::picker::{self, dialog_extensions};
@@ -98,6 +98,46 @@ pub async fn pick_background(
     }
     allow_media(&app, &path)?;
     Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+/// Lo que el webview debe cargar para un video: su copia en MP4 si ya se convirtió (video.rs), si no el original.
+#[tauri::command]
+pub fn playable_video(app: AppHandle, path: String) -> String {
+    let source = Path::new(&path);
+    if media_kind(source) != Some(MediaKind::Video) {
+        return path;
+    }
+    let Ok(cache) = app.path().app_cache_dir().map(|d| d.join("videos")) else { return path };
+    match video::converted(source, &cache) {
+        Some(copy) if allow_media(&app, &copy).is_ok() => copy.to_string_lossy().into_owned(),
+        _ => path,
+    }
+}
+
+/// Convierte a MP4 H.264 un video que este equipo no reproduce. Al terminar avisa a todas las ventanas con
+/// «video-converted» (la ruta del original), para que pasen a la copia.
+#[tauri::command]
+pub async fn convert_video(app: AppHandle, path: String) -> Result<String, CommandError> {
+    let source = PathBuf::from(&path);
+    if !source.is_file() {
+        return Err(CommandError::FileMissing { path });
+    }
+    if media_kind(&source) != Some(MediaKind::Video) {
+        return Err(CommandError::InvalidContent);
+    }
+    let cache = app.path().app_cache_dir().map_err(internal)?.join("videos");
+    let file = source.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    // Tarda (minutos en un video largo): fuera del hilo de los comandos.
+    let copy = tauri::async_runtime::spawn_blocking(move || video::convert(&source, &cache))
+        .await
+        .map_err(internal)?
+        .map_err(|e| match e {
+            video::VideoError::NoConverter => CommandError::VideoConverterMissing,
+            video::VideoError::Failed(reason) => CommandError::ConversionFailed { file, reason },
+        })?;
+    allow_media(&app, &copy)?;
+    let _ = app.emit("video-converted", &path);
+    Ok(copy.to_string_lossy().into_owned())
 }
 
 /// Vuelve a permitir los fondos guardados (el permiso del protocolo asset no sobrevive a un reinicio).
