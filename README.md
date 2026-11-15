@@ -20,8 +20,9 @@ EmetPro runs on the computer connected to the church projector or TV. One window
 
 - **Bible:** browse book → chapter → verse, or search by reference ("John 3:16", "Ps 23") or by words. Show two versions side by side. The version's copyright is always shown on screen. Use the arrow keys to move through verses.
 - **Lyrics and texts:** a lyrics library with slides, backgrounds (image or GIF) and fonts; free text for announcements. Import playlists from Holyrics (`.hpls`), and export your library to a single `.emetpro` file for backup or another computer.
-- **Media:** images, videos, PDFs and presentations (PowerPoint, Impress, Keynote), one by one or by folder. Presentations are converted with LibreOffice; if it isn't installed, EmetPro can download a private copy that you can remove later.
+- **Media:** images, videos, PDFs and presentations (PowerPoint, Impress, Keynote), one by one or by folder. The console shows the video playing, with pause, mute and volume. Presentations are converted with LibreOffice; if it isn't installed, EmetPro can download a private copy that you can remove later.
 - **Highlight words:** mark words of a verse or a lyric on screen with a marker, an underline or a text color, from the console or the phone. In a service plan the highlights are saved, so they can be prepared before the service.
+- **Animations:** fade or zoom between slides, text that enters line by line, word by word or like a typewriter, and gentle effects; video backgrounds and slowly moving images. Turn them on or off for the whole app, a plan, a section of a plan or a single lyric.
 - **Service plans:** prepare the order of service in advance (sections, songs, Bible passages, media and pauses), then step through it with "Next".
 - **Clock and timer:** show the time, or a countdown with a title that turns red when time runs out.
 - **Screen style:** automatic text sizing, alignment, position, background color or image, and your church logo as a watermark. Black out the screen and come back to what was there.
