@@ -106,6 +106,10 @@ const it: Record<MessageKey, string> = {
   "live.clear": "Rimuovi contenuto",
   "live.pause": "Metti in pausa il video",
   "live.resume": "Riprendi il video",
+  "live.mute": "Disattiva audio",
+  "live.unmute": "Attiva audio",
+  "live.volume": "Volume",
+  "live.videoPosition": "Posizione del video",
   "live.closedHint": "L'uscita è chiusa: ciò che invii si vedrà quando la apri.",
 
   "style.title": "Stile del testo sullo schermo",

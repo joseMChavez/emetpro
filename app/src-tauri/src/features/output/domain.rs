@@ -63,6 +63,11 @@ pub enum OutputContent {
     Video {
         path: String,
         paused: bool,
+        /// Volumen de 0 a 1. Lo que no lo trae (contenidos anteriores) suena entero.
+        #[serde(default = "full_volume")]
+        volume: f64,
+        #[serde(default)]
+        muted: bool,
     },
     Pdf {
         path: String,
@@ -102,6 +107,10 @@ pub enum OutputContent {
     Board {
         sheet: String,
     },
+}
+
+fn full_volume() -> f64 {
+    1.0
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -275,6 +284,12 @@ mod tests {
         assert_eq!(serde_json::to_value(&style).unwrap(), serde_json::from_str::<serde_json::Value>(json).unwrap());
     }
 
+    #[test]
+    pub fn video_sin_volumen_suena_entero() {
+        let old: OutputContent = serde_json::from_str(r#"{"kind":"video","path":"/x/a.mp4","paused":true}"#).unwrap();
+        assert!(matches!(old, OutputContent::Video { volume, muted: false, .. } if volume == 1.0));
+    }
+
     // Los contenidos llegan de la interfaz en camelCase: un campo mal nombrado solo falla al enviarlo.
     #[test]
     pub fn contenidos_de_la_interfaz() {
@@ -282,6 +297,7 @@ mod tests {
             r#"{"kind":"timer","durationMs":60000,"endsAt":null,"remainingMs":60000,"label":"Receso","background":null}"#,
             r#"{"kind":"clock","hour12":true,"seconds":false}"#,
             r#"{"kind":"board","sheet":"h1"}"#,
+            r#"{"kind":"video","path":"/x/a.mp4","paused":false,"volume":0.4,"muted":true}"#,
             r#"{"kind":"text","slides":["a"],"index":0,"credit":"c","background":null}"#,
             r#"{"kind":"text","slides":["a b"],"index":0,"credit":"","background":null,"marks":{"0":[{"w":1,"t":"b","style":"marker","color":"yellow"}]}}"#,
             r#"{"kind":"scripture","verses":[{"reference":"Jn 3:16","text":"t","second":null}],"index":0,"version":"V","copyright":"","second":null,"marks":{"V|Jn 3:16":[{"w":0,"t":"t","style":"underline","color":"blue"}]}}"#,
