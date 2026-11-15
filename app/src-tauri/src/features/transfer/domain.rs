@@ -185,6 +185,8 @@ pub fn resolve(
         writer: song.writer.trim().to_string(),
         body: song.slides.join(SEPARATOR),
         background: song.background.and_then(&background),
+        // El archivo no lleva la animación de cada letra: sigue lo general.
+        animation: None,
     };
     for &i in &plan.fresh {
         let song = to_song(new_id(), &incoming[i]);
@@ -229,7 +231,7 @@ mod tests {
     use super::*;
 
     fn song(id: &str, title: &str, singer: &str, body: &str) -> Song {
-        Song { id: id.into(), title: title.into(), singer: singer.into(), writer: String::new(), body: body.into(), background: None }
+        Song { id: id.into(), title: title.into(), singer: singer.into(), writer: String::new(), body: body.into(), background: None, animation: None }
     }
 
     fn incoming(title: &str, singer: &str, slides: &[&str]) -> Incoming {

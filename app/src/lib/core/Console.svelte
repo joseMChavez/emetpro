@@ -5,13 +5,14 @@
   import SettingsView from "$lib/features/settings/SettingsView.svelte";
   import SlideStrip from "$lib/features/output/SlideStrip.svelte";
   import StylePanel from "$lib/features/output/StylePanel.svelte";
+  import VideoControls from "$lib/features/output/VideoControls.svelte";
   import StreamWorkspace from "$lib/features/stream/StreamWorkspace.svelte";
   import { formatCountdown, pauseTimer, resumeTimer, startTimer } from "$lib/features/clock/clock";
   import { deckPosition, moveDeck } from "$lib/features/output/deck";
   import { i18n, locales, setLocale, t, type Locale, type MessageKey } from "$lib/i18n/index.svelte";
   import { toMessage, type Message } from "$lib/core/messages";
   import { pageCount } from "$lib/features/output/pdf";
-  import { platform, type MonitorInfo, type OutputContent, type OutputState, type OutputStyle } from "$lib/platform";
+  import { platform, type MonitorInfo, type OutputContent, type OutputState, type OutputStyle, type VideoTime } from "$lib/platform";
   import { formatDuration, init as initObs, obs } from "$lib/features/stream/obs.svelte";
   import { setSetting, settings, storage } from "$lib/core/settings.svelte";
   import { setTheme, theme, type ThemeChoice } from "$lib/core/theme.svelte";
@@ -55,6 +56,8 @@
   let expanded = $derived(settings.expanded);
   /** Qué pestaña se ve: la vista previa o lo que está en pantalla. Las flechas mueven la que se ve. */
   let stageTab = $state<"prepared" | "live">("live");
+  /** Por dónde va el video en la pantalla (lo avisa la ventana de salida), para verlo igual en la consola. */
+  let videoTime = $state<(VideoTime & { at: number }) | null>(null);
   /** Lo que había antes de poner la pantalla en negro, para volver con un clic. */
   let beforeBlack = $state<OutputContent | null>(null);
 
@@ -417,6 +420,7 @@
     const unlisten = platform.onOutputState((state) => (output = state));
     const unlistenError = platform.onOutputError((message) => (error = { key: "error.fromOutput", params: { message } }));
     const unlistenNavigate = platform.onOutputNavigate(stepLive);
+    const unlistenVideo = platform.onVideoTime((time) => (videoTime = { ...time, at: performance.now() }));
     const unlistenRemote = platform.onRemoteCommand(onRemoteCommand);
     const stopWatchingClients = watchRemoteClients();
     watchBoard();
@@ -426,6 +430,7 @@
       unlisten.then((fn) => fn());
       unlistenError.then((fn) => fn());
       unlistenNavigate.then((fn) => fn());
+      unlistenVideo.then((fn) => fn());
       unlistenRemote.then((fn) => fn());
       stopWatchingClients();
     };
@@ -593,7 +598,7 @@
       </div>
       <div class="card-body stack" role="tabpanel" id="pane-prepared" aria-labelledby="tab-prepared" hidden={stageTab !== "prepared"}>
         <div class="screen preview">
-          <OutputView content={prepared} style={output.style} preview marking={markTool.on} onmark={(part, from, to) => markWords("prepared", part, from, to)} />
+          <OutputView content={prepared} style={output.style} preview animated={stageTab === "prepared" && !expanded} playing={stageTab === "prepared" && !expanded} marking={markTool.on} onmark={(part, from, to) => markWords("prepared", part, from, to)} />
           <span class="screen-tag">{t("stage.previewTag")}</span>
         </div>
         <MarkTools content={prepared} saved={fromPlan(prepared)} onclear={() => clearWords("prepared")} />
@@ -615,7 +620,7 @@
       </div>
       <div class="card-body stack" role="tabpanel" id="pane-live" aria-labelledby="tab-live" hidden={stageTab !== "live"}>
         <div class="screen live">
-          <OutputView content={output.content} style={output.style} preview marking={markTool.on} onmark={(part, from, to) => markWords("live", part, from, to)} />
+          <OutputView content={output.content} style={output.style} preview animated={stageTab === "live" && !expanded} playing={stageTab === "live" && !expanded && output.open} follow={videoTime} marking={markTool.on} onmark={(part, from, to) => markWords("live", part, from, to)} />
           <span class="screen-tag live">{output.open ? t("live.badge") : t("live.closedBadge")}</span>
         </div>
         <MarkTools content={output.content} saved={fromPlan(output.content)} onclear={() => clearWords("live")} />
@@ -643,9 +648,7 @@
             <button class="btn" onclick={() => changeTimer("add")} disabled={busy}>{t("live.timerAdd")}</button>
           {/if}
           {#if output.content.kind === "video"}
-            <button class="btn" onclick={() => output.content.kind === "video" && send({ ...output.content, paused: !output.content.paused })} disabled={busy}>
-              {t(output.content.paused ? "live.resume" : "live.pause")}
-            </button>
+            <VideoControls content={output.content} time={videoTime} onchange={send} />
           {/if}
           {#if output.content.kind === "black" && beforeBlack}
             <button class="btn danger" onclick={toggleBlack} disabled={busy}>{t("live.unblack")}</button>
@@ -681,7 +684,7 @@
         </button>
       </div>
       <div class="dock-part">
-        <div class="mini screen live"><OutputView content={output.content} style={output.style} preview /></div>
+        <div class="mini screen live"><OutputView content={output.content} style={output.style} preview playing={expanded && output.open} follow={videoTime} /></div>
         <div class="dock-info">
           <span class="badge" class:on={output.open}>{output.open ? t("live.badge") : t("live.closedBadge")}</span>
           <span class="small"><strong>{describe(output.content)}</strong></span>

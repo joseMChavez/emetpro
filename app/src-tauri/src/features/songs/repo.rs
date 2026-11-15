@@ -7,13 +7,14 @@ use crate::core::db::{now_secs, Store};
 /// Crea o actualiza una letra. También la usan otras funcionalidades dentro de su propia transacción
 /// (features/transfer/repo.rs).
 pub fn upsert_song(conn: &Connection, song: &Song) -> rusqlite::Result<()> {
+    let animation = song.animation.map(|a| serde_json::to_string(&a)).transpose().map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     conn.execute(
-        "INSERT INTO songs (id, title, singer, writer, body, background, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        "INSERT INTO songs (id, title, singer, writer, body, background, animation, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
          ON CONFLICT(id) DO UPDATE SET title = excluded.title, singer = excluded.singer,
              writer = excluded.writer, body = excluded.body, background = excluded.background,
-             updated_at = excluded.updated_at",
-        params![song.id, song.title, song.singer, song.writer, song.body, song.background, now_secs()],
+             animation = excluded.animation, updated_at = excluded.updated_at",
+        params![song.id, song.title, song.singer, song.writer, song.body, song.background, animation, now_secs()],
     )?;
     Ok(())
 }
@@ -21,7 +22,7 @@ pub fn upsert_song(conn: &Connection, song: &Song) -> rusqlite::Result<()> {
 impl Store {
     pub fn songs(&self) -> rusqlite::Result<Vec<Song>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, singer, writer, body, background FROM songs ORDER BY title COLLATE NOCASE",
+            "SELECT id, title, singer, writer, body, background, animation FROM songs ORDER BY title COLLATE NOCASE",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok(Song {
@@ -31,6 +32,8 @@ impl Store {
                 writer: row.get(3)?,
                 body: row.get(4)?,
                 background: row.get(5)?,
+                // Una animación que no se entiende (de una versión más nueva) se ignora: la letra sigue lo general.
+                animation: row.get::<_, Option<String>>(6)?.and_then(|json| serde_json::from_str(&json).ok()),
             })
         })?;
         rows.collect()
@@ -56,6 +59,7 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::features::output::domain::{Entrance, TextAnimation, Transition};
     use std::path::PathBuf;
 
     fn temp_dir(name: &str) -> PathBuf {
@@ -72,6 +76,8 @@ mod tests {
             writer: String::new(),
             body: "a\n****\nb".into(),
             background: None,
+            // Con su propia animación: se guarda y se lee igual (D-024).
+            animation: Some(TextAnimation { transition: Transition::Zoom, entrance: Entrance::Words, ..TextAnimation::default() }),
         }
     }
 
@@ -82,6 +88,7 @@ mod tests {
         store.save_song(&song("b", "Bendito")).unwrap();
         store.save_song(&song("a", "Alabanza")).unwrap();
         assert_eq!(store.songs().unwrap()[0].title, "Alabanza");
+        assert_eq!(store.songs().unwrap()[0].animation.map(|a| a.transition), Some(Transition::Zoom));
 
         store.delete_song("b").unwrap();
         assert_eq!(store.songs().unwrap().len(), 1);

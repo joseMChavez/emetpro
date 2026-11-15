@@ -77,27 +77,31 @@ pub async fn pick_media_folder(app: AppHandle, title: String) -> Result<Option<V
 
 // --- Transmisión con OBS ---
 
-/// Elige una imagen o GIF de fondo. None si se cancela.
+/// Elige una imagen o GIF de fondo (o el logo); con `videos`, también un video en bucle (D-024). None si se cancela.
 #[tauri::command]
 pub async fn pick_background(
     app: AppHandle,
     title: String,
     filter_name: String,
+    videos: Option<bool>,
 ) -> Result<Option<String>, CommandError> {
-    let request = picker::Request {
-        title,
-        filter: Some((filter_name, dialog_extensions(&[IMAGE_EXTENSIONS]))),
-        mode: picker::Mode::File,
-    };
+    let videos = videos.unwrap_or(false);
+    let extensions = if videos { dialog_extensions(&[IMAGE_EXTENSIONS, VIDEO_EXTENSIONS]) } else { dialog_extensions(&[IMAGE_EXTENSIONS]) };
+    let request = picker::Request { title, filter: Some((filter_name, extensions)), mode: picker::Mode::File };
     let Some(path) = picker::pick(&app, request).await.map_err(internal)?.and_then(|p| p.into_iter().next()) else {
         return Ok(None);
     };
+    match media_kind(&path) {
+        Some(MediaKind::Image) => {}
+        Some(MediaKind::Video) if videos => {}
+        _ => return Ok(None),
+    }
     allow_media(&app, &path)?;
     Ok(Some(path.to_string_lossy().into_owned()))
 }
 
 /// Vuelve a permitir los fondos guardados (el permiso del protocolo asset no sobrevive a un reinicio).
-/// Devuelve los que siguen existiendo; solo imágenes, para no abrir otros archivos.
+/// Devuelve los que siguen existiendo; solo imágenes y videos, para no abrir otros archivos.
 #[tauri::command]
 pub fn allow_backgrounds(app: AppHandle, paths: Vec<String>) -> Vec<String> {
     paths
@@ -105,7 +109,7 @@ pub fn allow_backgrounds(app: AppHandle, paths: Vec<String>) -> Vec<String> {
         .filter(|p| {
             let path = Path::new(p);
             path.is_file()
-                && matches!(media_kind(path), Some(MediaKind::Image))
+                && matches!(media_kind(path), Some(MediaKind::Image | MediaKind::Video))
                 && allow_media(&app, path).is_ok()
         })
         .collect()
