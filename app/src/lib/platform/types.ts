@@ -24,10 +24,12 @@ export type OutputContent =
       index: number;
       /** Autoría de una letra; se muestra en la primera diapositiva. */
       credit?: string;
-      /** Imagen o GIF propio de esta letra; tapa el fondo general. */
+      /** Imagen, GIF o video propio de esta letra; tapa el fondo general. */
       background?: string | null;
       /** Palabras resaltadas, por número de diapositiva (D-023). */
       marks?: Marks;
+      /** Solo si la cascada (plan, sección, letra) cambia lo general (D-024). */
+      animation?: TextAnimation;
     }
   | { kind: "image"; path: string }
   | {
@@ -49,6 +51,7 @@ export type OutputContent =
       second?: { version: string; copyright: string } | null;
       /** Palabras resaltadas, por «versión|cita» (D-023). */
       marks?: Marks;
+      animation?: TextAnimation;
     }
   | { kind: "clock"; hour12: boolean; seconds: boolean }
   /** En marcha si endsAt (ms desde 1970) tiene valor; en pausa, remainingMs guarda lo que queda. */
@@ -84,6 +87,17 @@ export interface OutputStyle {
   /** Imagen o GIF detrás del texto, la Biblia y el reloj. */
   backgroundImage: string | null;
   logo: LogoStyle;
+  /** Animar el texto (D-024); un plan, una sección o una letra pueden decir otra cosa. */
+  animate: boolean;
+  animation: TextAnimation;
+}
+
+/** Cómo se anima el texto en pantalla y si el fondo de imagen se mueve (D-024). */
+export interface TextAnimation {
+  transition: "none" | "fade" | "zoom";
+  entrance: "none" | "lines" | "words" | "typewriter";
+  ambient: "none" | "breathe" | "float" | "glow";
+  background: "still" | "slow";
 }
 
 export type Corner = "topLeft" | "topRight" | "bottomLeft" | "bottomRight";
@@ -180,8 +194,10 @@ export interface Song {
   writer: string;
   /** Texto completo; **** (o ***) en una línea separa las diapositivas. */
   body: string;
-  /** Imagen o GIF propio; null = el fondo general. */
+  /** Imagen, GIF o video propio; null = el fondo general. */
   background: string | null;
+  /** Su propia animación; null = la del plan o la general (D-024). */
+  animation?: TextAnimation | null;
 }
 
 /** Ajustes tal como están en la base: clave → valor JSON. Las claves ausentes valen lo de por defecto. */
@@ -271,10 +287,13 @@ export interface Plan {
   date: string | null;
   notes: string;
   items: PlanItem[];
+  /** Animar el texto: null = como lo general (D-024). */
+  animate?: boolean | null;
 }
 
 export type PlanItem = { id: string } & (
-  | { kind: "section"; title: string }
+  /** `animate` vale para lo que sigue hasta la sección siguiente; null = como el plan (D-024). */
+  | { kind: "section"; title: string; animate?: boolean | null }
   | { kind: "song"; songId: string; marks?: Marks }
   | { kind: "media"; path: string; media: MediaKind }
   | { kind: "pause"; title: string; durationMs: number; background?: string | null }

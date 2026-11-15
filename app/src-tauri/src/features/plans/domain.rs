@@ -15,6 +15,9 @@ pub struct Plan {
     pub date: Option<String>,
     pub notes: String,
     pub items: Vec<PlanItem>,
+    /// Animar el texto (D-024): None = como lo general.
+    #[serde(default)]
+    pub animate: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -30,7 +33,12 @@ pub struct PlanItem {
 #[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ItemContent {
     /// Un título que ordena el plan («Alabanza», «Predicación»); no se muestra en pantalla.
-    Section { title: String },
+    Section {
+        title: String,
+        /// Animar lo que sigue hasta la sección siguiente (D-024): None = como el plan.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        animate: Option<bool>,
+    },
     /// Una letra de la biblioteca. Si se borra de la biblioteca, el plan la marca como borrada.
     Song {
         song_id: String,

@@ -1,5 +1,6 @@
 <script lang="ts" module>
   import type { OutputStyle } from "$lib/platform";
+  import { DEFAULT_ANIMATION } from "$lib/features/output/animation";
 
   export const DEFAULT_STYLE: OutputStyle = {
     fontScale: 1,
@@ -9,6 +10,8 @@
     font: "system",
     backgroundImage: null,
     logo: { image: null, corner: "topRight", size: "medium", opacity: 0.6 },
+    animate: true,
+    animation: { ...DEFAULT_ANIMATION },
   };
 
   /** Alto del logo según el tamaño elegido, en % del alto de la pantalla. */

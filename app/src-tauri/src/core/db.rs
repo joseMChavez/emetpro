@@ -48,6 +48,10 @@ const MIGRATIONS: &[&str] = &["
     FROM (SELECT song_id FROM setlist ORDER BY position)
     HAVING COUNT(*) > 0;
     DROP TABLE setlist;
+", "
+    -- Animaciones (D-024): la propia de cada letra (JSON) y si un plan anima el texto (NULL = como lo general).
+    ALTER TABLE songs ADD COLUMN animation TEXT;
+    ALTER TABLE plans ADD COLUMN animate INTEGER;
 "];
 
 pub struct Store {

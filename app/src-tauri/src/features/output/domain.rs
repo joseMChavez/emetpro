@@ -56,6 +56,9 @@ pub enum OutputContent {
         background: Option<String>,
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         marks: Marks,
+        /// Solo si la cascada (plan, sección, letra) cambia lo general (D-024).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        animation: Option<TextAnimation>,
     },
     Image {
         path: String,
@@ -84,6 +87,8 @@ pub enum OutputContent {
         second: Option<SecondVersion>,
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         marks: Marks,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        animation: Option<TextAnimation>,
     },
     /// Hora actual; la dibuja la salida con su propio reloj.
     Clock {
@@ -107,6 +112,64 @@ pub enum OutputContent {
     Board {
         sheet: String,
     },
+}
+
+/// Cómo se anima el texto en pantalla (D-024).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TextAnimation {
+    pub transition: Transition,
+    pub entrance: Entrance,
+    pub ambient: Ambient,
+    pub background: BackgroundMotion,
+}
+
+impl Default for TextAnimation {
+    /// Lo de siempre más un fundido suave entre diapositivas.
+    fn default() -> Self {
+        Self { transition: Transition::Fade, entrance: Entrance::None, ambient: Ambient::None, background: BackgroundMotion::Still }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Transition {
+    #[default]
+    None,
+    Fade,
+    Zoom,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Entrance {
+    #[default]
+    None,
+    Lines,
+    Words,
+    Typewriter,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Ambient {
+    #[default]
+    None,
+    Breathe,
+    Float,
+    Glow,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BackgroundMotion {
+    #[default]
+    Still,
+    Slow,
+}
+
+fn yes() -> bool {
+    true
 }
 
 fn full_volume() -> f64 {
@@ -230,6 +293,11 @@ pub struct OutputStyle {
     pub background_image: Option<String>,
     #[serde(default)]
     pub logo: Logo,
+    /// Si se anima el texto (D-024); un plan, una sección o una letra pueden decir otra cosa.
+    #[serde(default = "yes")]
+    pub animate: bool,
+    #[serde(default)]
+    pub animation: TextAnimation,
 }
 
 impl Default for OutputStyle {
@@ -242,6 +310,8 @@ impl Default for OutputStyle {
             font: Font::System,
             background_image: None,
             logo: Logo::default(),
+            animate: true,
+            animation: TextAnimation::default(),
         }
     }
 }
@@ -277,9 +347,11 @@ mod tests {
         )
         .unwrap();
         assert!(old.logo.image.is_none());
+        assert!(old.animate);
+        assert_eq!(old.animation.transition, Transition::Fade);
         assert!(matches!(old.logo.corner, Corner::TopRight));
 
-        let json = r#"{"fontScale":1.5,"align":"left","position":"top","background":"navy","font":"oswald","backgroundImage":null,"logo":{"image":"/x/logo.png","corner":"bottomRight","size":"large","opacity":0.4}}"#;
+        let json = r#"{"fontScale":1.5,"align":"left","position":"top","background":"navy","font":"oswald","backgroundImage":null,"logo":{"image":"/x/logo.png","corner":"bottomRight","size":"large","opacity":0.4},"animate":false,"animation":{"transition":"zoom","entrance":"typewriter","ambient":"glow","background":"slow"}}"#;
         let style: OutputStyle = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_value(&style).unwrap(), serde_json::from_str::<serde_json::Value>(json).unwrap());
     }
@@ -297,6 +369,7 @@ mod tests {
             r#"{"kind":"timer","durationMs":60000,"endsAt":null,"remainingMs":60000,"label":"Receso","background":null}"#,
             r#"{"kind":"clock","hour12":true,"seconds":false}"#,
             r#"{"kind":"board","sheet":"h1"}"#,
+            r#"{"kind":"text","slides":["a"],"index":0,"credit":"","background":"/x/f.mp4","animation":{"transition":"none","entrance":"lines","ambient":"float","background":"still"}}"#,
             r#"{"kind":"video","path":"/x/a.mp4","paused":false,"volume":0.4,"muted":true}"#,
             r#"{"kind":"text","slides":["a"],"index":0,"credit":"c","background":null}"#,
             r#"{"kind":"text","slides":["a b"],"index":0,"credit":"","background":null,"marks":{"0":[{"w":1,"t":"b","style":"marker","color":"yellow"}]}}"#,

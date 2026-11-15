@@ -25,7 +25,8 @@ export function songContent(song: Song): OutputContent {
   const slides = splitSlides(song.body);
   if (slides.length === 0) return { kind: "empty" };
   const background = song.background && allowedBackgrounds.has(song.background) ? song.background : null;
-  return { kind: "text", slides, index: 0, credit: credit(song), background };
+  // Una letra con su propia animación la lleva consigo (D-024); en un plan, items.svelte.ts añade la cascada.
+  return { kind: "text", slides, index: 0, credit: credit(song), background, ...(song.animation ? { animation: { ...song.animation } } : {}) };
 }
 
 function failed(action: string, e: unknown) {

@@ -182,6 +182,7 @@ pub fn transfer_import_apply(
         name: name.trim().to_string(),
         date: None,
         notes: String::new(),
+        animate: None,
         items: pending
             .setlist
             .iter()

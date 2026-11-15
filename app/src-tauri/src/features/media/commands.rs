@@ -86,7 +86,8 @@ pub async fn pick_background(
 ) -> Result<Option<String>, CommandError> {
     let request = picker::Request {
         title,
-        filter: Some((filter_name, dialog_extensions(&[IMAGE_EXTENSIONS]))),
+        // Imagen, GIF o video en bucle (D-024).
+        filter: Some((filter_name, dialog_extensions(&[IMAGE_EXTENSIONS, VIDEO_EXTENSIONS]))),
         mode: picker::Mode::File,
     };
     let Some(path) = picker::pick(&app, request).await.map_err(internal)?.and_then(|p| p.into_iter().next()) else {
@@ -97,7 +98,7 @@ pub async fn pick_background(
 }
 
 /// Vuelve a permitir los fondos guardados (el permiso del protocolo asset no sobrevive a un reinicio).
-/// Devuelve los que siguen existiendo; solo imágenes, para no abrir otros archivos.
+/// Devuelve los que siguen existiendo; solo imágenes y videos, para no abrir otros archivos.
 #[tauri::command]
 pub fn allow_backgrounds(app: AppHandle, paths: Vec<String>) -> Vec<String> {
     paths
@@ -105,7 +106,7 @@ pub fn allow_backgrounds(app: AppHandle, paths: Vec<String>) -> Vec<String> {
         .filter(|p| {
             let path = Path::new(p);
             path.is_file()
-                && matches!(media_kind(path), Some(MediaKind::Image))
+                && matches!(media_kind(path), Some(MediaKind::Image | MediaKind::Video))
                 && allow_media(&app, path).is_ok()
         })
         .collect()
