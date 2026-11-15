@@ -21,6 +21,8 @@ pub enum CommandError {
     /// Para mostrar presentaciones hace falta LibreOffice.
     OfficeNotInstalled,
     ConversionFailed { file: String, reason: String },
+    /// Para convertir un video que este equipo no reproduce hace falta avconvert (macOS) o ffmpeg.
+    VideoConverterMissing,
     /// Ya se está descargando LibreOffice (o borrando la copia).
     OfficeBusy,
     /// El usuario canceló la descarga.

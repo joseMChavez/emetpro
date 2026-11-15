@@ -3,6 +3,7 @@
 mod commands;
 pub mod domain;
 mod scan;
+mod video;
 
 use tauri::plugin::{Builder, TauriPlugin};
 use tauri::Wry;
@@ -16,6 +17,8 @@ pub fn plugin() -> TauriPlugin<Wry> {
             commands::pick_media_folder,
             commands::pick_background,
             commands::allow_backgrounds,
+            commands::playable_video,
+            commands::convert_video,
         ])
         .build()
 }

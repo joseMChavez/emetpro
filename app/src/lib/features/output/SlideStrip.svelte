@@ -65,7 +65,9 @@
 {/if}
 
 <style>
-  ol { list-style: none; margin: 0; padding: 2px; display: flex; gap: 8px; overflow-x: auto; }
+  /* flex: none: dentro de la columna de la consola, una lista con scroll se podía encoger hasta casi
+     desaparecer en una ventana baja, y la leyenda de las flechas quedaba encima de las miniaturas. */
+  ol { flex: none; list-style: none; margin: 0; padding: 2px; display: flex; gap: 8px; overflow-x: auto; }
   .thumbs li { flex: 0 0 132px; }
   .thumb {
     position: relative;
