@@ -105,6 +105,10 @@ const es = {
   "live.clear": "Quitar contenido",
   "live.pause": "Pausar video",
   "live.resume": "Reanudar video",
+  "live.mute": "Silenciar",
+  "live.unmute": "Activar sonido",
+  "live.volume": "Volumen",
+  "live.videoPosition": "Posición del video",
   "live.closedHint": "La salida está cerrada: lo que envíes se verá al abrirla.",
 
   "style.title": "Estilo del texto en pantalla",

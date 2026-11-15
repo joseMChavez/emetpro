@@ -106,6 +106,10 @@ const en: Record<MessageKey, string> = {
   "live.clear": "Clear content",
   "live.pause": "Pause video",
   "live.resume": "Resume video",
+  "live.mute": "Mute",
+  "live.unmute": "Unmute",
+  "live.volume": "Volume",
+  "live.videoPosition": "Video position",
   "live.closedHint": "The output is closed: what you send will show when you open it.",
 
   "style.title": "On-screen text style",

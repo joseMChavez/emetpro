@@ -30,7 +30,14 @@ export type OutputContent =
       marks?: Marks;
     }
   | { kind: "image"; path: string }
-  | { kind: "video"; path: string; paused: boolean }
+  | {
+      kind: "video";
+      path: string;
+      paused: boolean;
+      /** De 0 a 1; sin valor, entero. */
+      volume?: number;
+      muted?: boolean;
+    }
   | { kind: "pdf"; path: string; page: number }
   | {
       kind: "scripture";
@@ -285,6 +292,14 @@ export type PlanItem = { id: string } & (
     }
 );
 
+/** Por dónde va el video en la pantalla, en segundos. */
+export interface VideoTime {
+  path: string;
+  time: number;
+  duration: number;
+  paused: boolean;
+}
+
 export interface OutputState {
   open: boolean;
   monitorName: string | null;
@@ -341,6 +356,9 @@ export interface Platform {
   /** Avanzar (true) o retroceder lo que está en pantalla; lo pide la ventana de salida al pulsar una flecha. */
   outputNavigate(forward: boolean): Promise<void>;
   onOutputNavigate(handler: (forward: boolean) => void): Promise<() => void>;
+  /** La ventana de salida avisa por dónde va el video, para que la consola lo siga en su vista. */
+  reportVideoTime(time: VideoTime): Promise<void>;
+  onVideoTime(handler: (time: VideoTime) => void): Promise<() => void>;
   listBibles(): Promise<BibleInfo[]>;
   /** Abre el selector de archivos XML; devuelve las Biblias importadas ([] si se cancela). */
   importBibles(title: string, filterName: string): Promise<BibleInfo[]>;

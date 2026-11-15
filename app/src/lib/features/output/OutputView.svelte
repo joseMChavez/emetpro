@@ -70,7 +70,7 @@
 <script lang="ts">
   // Dibuja un contenido de salida. Lo usan la ventana de salida y las miniaturas de la consola,
   // así la vista previa se ve igual que la pantalla real.
-  import { platform, type OutputContent } from "$lib/platform";
+  import { platform, type OutputContent, type VideoTime } from "$lib/platform";
   import { renderPage } from "$lib/features/output/pdf";
   import { formatClock, formatCountdown, timerRemaining } from "$lib/features/clock/clock";
   import { fontFamily } from "$lib/features/output/fonts";
@@ -89,12 +89,21 @@
     onscreen,
     marking = false,
     onmark,
+    playing = false,
+    follow = null,
+    onvideotime,
   }: {
     content: OutputContent;
     style?: OutputStyle;
     diagnostics?: string;
-    /** En miniatura el video no se reproduce: evita decodificarlo dos veces y que suene en la consola. */
+    /** En miniatura el video no suena, y solo se reproduce con `playing` (si no, se ve su primer cuadro). */
     preview?: boolean;
+    /** Vista previa a la vista: el video se reproduce sin sonido. Desde el principio y en bucle, salvo con `follow`. */
+    playing?: boolean;
+    /** Por dónde va el video en la pantalla (y cuándo llegó el aviso, con performance.now()): la vista lo sigue. */
+    follow?: (VideoTime & { at: number }) | null;
+    /** La ventana de salida avisa por dónde va el video. */
+    onvideotime?: (time: VideoTime) => void;
     onerror?: (message: string) => void;
     /** La ventana de salida mide dónde quedó cada palabra, para que el teléfono dibuje justo encima. */
     onscreen?: (words: ScreenWord[]) => void;
@@ -210,14 +219,48 @@
     onerror?.(t("error.video", { name }) + hint);
   }
 
+  /** Siguiendo la pantalla: la posición del video allí, contando lo que pasó desde el aviso. */
+  let following = $derived(follow && content.kind === "video" && follow.path === content.path ? follow : null);
+
   $effect(() => {
-    if (!video || content.kind !== "video" || preview) return;
+    if (!video || content.kind !== "video" || (preview && !playing)) return;
+    // La vista previa de lo preparado se reproduce siempre; la de lo que está en pantalla, como la pantalla.
+    const paused = preview && !following ? false : content.paused;
+    if (preview) {
+      if (paused) video.pause();
+      else video.play().catch(() => {});
+      return;
+    }
     if (content.paused) {
       video.pause();
     } else {
       video.play().catch((e) => onerror?.(t("error.videoStart", { error: String(e) })));
     }
   });
+
+  // Más de un segundo de diferencia con la pantalla: salta a donde va allí.
+  $effect(() => {
+    if (!video || !following || !playing) return;
+    const expected = following.time + (following.paused ? 0 : (performance.now() - following.at) / 1000);
+    if (Math.abs(video.currentTime - expected) > 1) video.currentTime = expected;
+  });
+
+  // En la pantalla, el volumen y el silencio elegidos en la consola.
+  $effect(() => {
+    if (!video || content.kind !== "video" || preview) return;
+    video.volume = Math.max(0, Math.min(1, content.volume ?? 1));
+    video.muted = content.muted ?? false;
+  });
+
+  let lastReport = 0;
+  /** Avisa por dónde va: al empezar, pausar, saltar y, mientras se reproduce, dos veces por segundo. */
+  function reportTime(always: boolean) {
+    if (!video || !onvideotime || content.kind !== "video") return;
+    const now = performance.now();
+    if (!always && now - lastReport < 500) return;
+    lastReport = now;
+    onvideotime({ path: content.path, time: video.currentTime, duration: Number.isFinite(video.duration) ? video.duration : 0, paused: video.paused });
+  }
 
   $effect(() => {
     if (content.kind !== "clock" && content.kind !== "timer") return;
@@ -338,7 +381,19 @@
   {:else if content.kind === "video"}
     {#key src}
       <!-- svelte-ignore a11y_media_has_caption -->
-      <video bind:this={video} {src} muted={preview} preload={preview ? "metadata" : "auto"} onerror={videoError}></video>
+      <video
+        bind:this={video}
+        {src}
+        muted={preview}
+        loop={preview && playing && !follow}
+        preload={preview && !playing ? "metadata" : "auto"}
+        onerror={videoError}
+        ontimeupdate={() => reportTime(false)}
+        onplay={() => reportTime(true)}
+        onpause={() => reportTime(true)}
+        onseeked={() => reportTime(true)}
+        onloadedmetadata={() => reportTime(true)}
+      ></video>
     {/key}
   {:else if content.kind === "pdf"}
     <canvas bind:this={canvas}></canvas>

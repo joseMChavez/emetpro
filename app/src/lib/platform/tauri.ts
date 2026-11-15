@@ -1,10 +1,10 @@
 // Único archivo de la interfaz que importa APIs de Tauri. Migrar a Electron = reescribir este archivo.
 // Cada funcionalidad del backend es un plugin interno: sus comandos se llaman «plugin:<funcionalidad>|<comando>».
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import type { RemoteCommand } from "$lib/features/remote/protocol";
 import type { BoardMessage } from "$lib/features/remote/board";
-import type { OfficeProgress, OutputState, Platform, StoredSettings } from "./types";
+import type { OfficeProgress, OutputState, Platform, StoredSettings, VideoTime } from "./types";
 
 export const tauriPlatform: Platform = {
   listMonitors: () => invoke("plugin:output|list_monitors"),
@@ -31,6 +31,9 @@ export const tauriPlatform: Platform = {
   onOutputError: (handler) => listen<string>("output-error", (event) => handler(event.payload)),
   outputNavigate: (forward) => invoke("plugin:output|output_navigate", { forward }),
   onOutputNavigate: (handler) => listen<boolean>("output-navigate", (event) => handler(event.payload)),
+  // De ventana a ventana, sin pasar por el backend: es solo para que la consola vea el video donde va.
+  reportVideoTime: (time) => emit("output-video-time", time),
+  onVideoTime: (handler) => listen<VideoTime>("output-video-time", (event) => handler(event.payload)),
   listBibles: () => invoke("plugin:bible|list_bibles"),
   importBibles: (title, filterName) => invoke("plugin:bible|import_bibles", { title, filterName }),
   removeBible: (id) => invoke("plugin:bible|remove_bible", { id }),
