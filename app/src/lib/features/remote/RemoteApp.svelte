@@ -2,6 +2,7 @@
   // Página del control remoto, en el navegador del teléfono. No usa Tauri: habla con el servidor de EmetPro
   // por WebSocket (órdenes y estado) y por /api/chapter (versículos). La consola aplica cada orden.
   import { onMount, tick, untrack } from "svelte";
+  import { version as build } from "$app/environment";
   import { bookName, type BookLanguage } from "$lib/features/bible/books";
   import { parseQuery } from "$lib/features/bible/reference";
   import { i18n, t, type MessageKey } from "$lib/i18n/index.svelte";
@@ -93,6 +94,18 @@
     else document.documentElement.requestFullscreen({ navigationUI: "hide" }).catch(() => {});
   }
 
+  /** Si EmetPro se actualizó o se reinició con otra compilación, esta página tiene el código viejo en memoria (al
+   *  reconectarse no se recarga sola): se recarga para tener el de ahora, con sus herramientas y órdenes. */
+  async function reloadIfUpdated() {
+    try {
+      const response = await fetch("/_app/version.json", { cache: "no-store" });
+      const current = (await response.json()) as { version?: string };
+      if (current.version && current.version !== build) location.reload();
+    } catch {
+      // Sin respuesta: se sigue con la página que hay.
+    }
+  }
+
   function connect() {
     if (!key) return;
     clearTimeout(retryTimer);
@@ -105,6 +118,7 @@
       opened = true;
       retries = 0;
       connection = "open";
+      reloadIfUpdated();
     };
     ws.onmessage = (event) => {
       try {
