@@ -166,4 +166,4 @@
 - **Para que se siga leyendo:** las animaciones son cortas (entrada completa en 2,5 s como mucho, aunque el versículo sea largo) y los efectos continuos se mueven poco y despacio. La máquina de escribir revela cada palabra letra a letra con un recorte, sin partir el texto en letras: las marcas (D-023) y la pizarra (D-021) siguen funcionando.
 - **Dónde se ven:** en la ventana de salida y en las vistas «Vista previa» y «En pantalla» de la consola; las miniaturas no se animan.
 - **Base de datos:** la migración 3 añade `songs.animation` (JSON) y `plans.animate`. Una versión anterior sigue abriendo la base: no lee esas columnas. Las secciones lo guardan en el JSON de los elementos (D-019).
-- **Queda fuera:** animaciones en el rodapié de OBS y en el teléfono, fondos animados incluidos en la app.
+- **Queda fuera:** animaciones en el rodapié de OBS y en el teléfono, fondos animados incluidos en la app. El archivo `.emetpro` no lleva la animación de cada letra (decidido con el autor: lo haría más pesado sin necesidad); una letra importada sigue lo general.
