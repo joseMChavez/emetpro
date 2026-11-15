@@ -16,7 +16,7 @@ export const tauriPlatform: Platform = {
   onOutputState: (handler) => listen<OutputState>("output-state", (event) => handler(event.payload)),
   pickMedia: (title, filterName) => invoke("plugin:media|pick_media", { title, filterName }),
   pickMediaFolder: (title) => invoke("plugin:media|pick_media_folder", { title }),
-  pickBackground: (title, filterName) => invoke("plugin:media|pick_background", { title, filterName }),
+  pickBackground: (title, filterName, videos = false) => invoke("plugin:media|pick_background", { title, filterName, videos }),
   allowBackgrounds: (paths) => invoke("plugin:media|allow_backgrounds", { paths }),
   convertPresentation: (path) => invoke("plugin:presentations|convert_presentation", { path }),
   officeAvailable: () => invoke("plugin:presentations|office_available"),

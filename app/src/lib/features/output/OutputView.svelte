@@ -81,7 +81,9 @@
   import BoardLayer from "$lib/features/remote/BoardLayer.svelte";
   import { COORD, layerKey, PAPER_COLOR, type ScreenWord } from "$lib/features/remote/board";
   import { sheetPaper } from "$lib/features/remote/board.svelte";
-  import { currentMarks, MARK_HEX, segments, type MarkPart, type WordMark } from "$lib/features/marks/marks";
+  import { currentMarks, MARK_HEX, segments, words as wordsOf, type MarkPart, type WordMark } from "$lib/features/marks/marks";
+  import { animationOf, isVideo, NO_ANIMATION } from "$lib/features/output/animation";
+  import { cubicOut } from "svelte/easing";
 
   let {
     content,
@@ -95,6 +97,7 @@
     playing = false,
     follow = null,
     onvideotime,
+    animated = false,
   }: {
     content: OutputContent;
     style?: OutputStyle;
@@ -107,6 +110,8 @@
     follow?: (VideoTime & { at: number }) | null;
     /** La ventana de salida avisa por dónde va el video. */
     onvideotime?: (time: VideoTime) => void;
+    /** Con animaciones (D-024): la ventana de salida y las vistas grandes de la consola; las miniaturas no. */
+    animated?: boolean;
     onerror?: (message: string) => void;
     /** La ventana de salida mide dónde quedó cada palabra, para que el teléfono dibuje justo encima. */
     onscreen?: (words: ScreenWord[]) => void;
@@ -210,11 +215,62 @@
   let paper = $derived(content.kind === "board" ? sheetPaper(content.sheet) : null);
   let layer = $derived(layerKey(content));
 
-  let backdrop = $derived.by(() => {
+  let backdropPath = $derived.by(() => {
     if (!lyric && !clock && content.kind !== "empty") return null;
-    const path = ((content.kind === "text" || content.kind === "timer") && content.background) || style.backgroundImage;
-    return path ? platform.mediaUrl(path) : null;
+    return ((content.kind === "text" || content.kind === "timer") && content.background) || style.backgroundImage || null;
   });
+  let backdrop = $derived(backdropPath ? platform.mediaUrl(backdropPath) : null);
+  /** Un fondo de video va en bucle y sin sonido; en las miniaturas se ve su primer cuadro. */
+  let backdropVideo = $derived(backdropPath !== null && isVideo(backdropPath));
+
+  // ---- Animaciones (D-024) ----
+
+  let anim = $derived(animated ? animationOf(content, style) : NO_ANIMATION);
+  /** Cambia con el texto (no con las marcas): cada cambio vuelve a hacer la transición y la entrada. */
+  let lyricKey = $derived(lyric ? `${lyric.text}\u0000${lyric.reference}\u0000${lyric.second?.text ?? ""}` : "");
+  let entering = $derived(anim.entrance !== "none");
+
+  /** La entrada completa dura como mucho esto, por largo que sea el texto. */
+  const ENTRANCE_MS = 2200;
+
+  /** Cuándo empieza cada palabra (ms) y, en la máquina de escribir, cuánto tarda cada letra. */
+  let entrance = $derived.by(() => {
+    const parts = lyric ? [lyric.text, lyric.second?.text ?? ""] : ["", ""];
+    const delays: number[][] = [[], []];
+    if (!lyric || !entering) return { delays, charMs: 0, total: 0 };
+    const all = parts.map((text) => wordsOf(text));
+    const totalWords = all[0].length + all[1].length || 1;
+    const totalChars = all.flat().reduce((n, w) => n + w.length, 0) || 1;
+    const totalLines = parts.reduce((n, text) => n + (text ? text.split("\n").length : 0), 0) || 1;
+    const wordMs = Math.min(90, ENTRANCE_MS / totalWords);
+    const lineMs = Math.min(350, ENTRANCE_MS / totalLines);
+    const charMs = Math.min(40, ENTRANCE_MS / totalChars);
+    let word = 0;
+    let line = 0;
+    let char = 0;
+    parts.forEach((text, p) => {
+      for (const [l, row] of (text ? text.split("\n") : []).entries()) {
+        for (const w of wordsOf(row)) {
+          delays[p].push(anim.entrance === "lines" ? (line + l) * lineMs : anim.entrance === "words" ? word * wordMs : char * charMs);
+          word++;
+          char += w.length;
+        }
+      }
+      line += text ? text.split("\n").length : 0;
+    });
+    const total = anim.entrance === "lines" ? line * lineMs : anim.entrance === "words" ? word * wordMs : char * charMs;
+    return { delays, charMs, total };
+  });
+
+  function enter(_node: Element) {
+    if (anim.transition === "fade") return { duration: 450, easing: cubicOut, css: (t: number) => `opacity: ${t}` };
+    if (anim.transition === "zoom") return { duration: 520, easing: cubicOut, css: (t: number) => `opacity: ${t}; transform: scale(${0.9 + 0.1 * t})` };
+    return { duration: 0 };
+  }
+
+  function leave(_node: Element) {
+    return anim.transition === "none" ? { duration: 0 } : { duration: 280, css: (t: number) => `opacity: ${t}` };
+  }
 
   function videoError() {
     // 4 = MEDIA_ERR_SRC_NOT_SUPPORTED: suele indicar que falta el códec en el sistema.
@@ -321,8 +377,11 @@
   });
 </script>
 
-{#snippet marked(text: string, part: MarkPart, marks: Map<number, WordMark>)}{#each segments(text, marks) as seg}{#if seg.mark || (marking && seg.w !== null)}<span
+{#snippet marked(text: string, part: MarkPart, marks: Map<number, WordMark>)}{#each segments(text, marks) as seg}{#if seg.mark || ((marking || entering) && seg.w !== null)}<span
         class="word {seg.mark ? `wm ${seg.mark.style}` : ''} {seg.w === null ? 'gap' : ''}"
+        style:--d={entering && seg.w !== null ? `${Math.round(entrance.delays[part === "text" ? 0 : 1][seg.w] ?? 0)}ms` : undefined}
+        style:--n={entering && seg.w !== null ? [...seg.text].length : undefined}
+        style:--c={entering ? `${entrance.charMs}ms` : undefined}
         class:pending={pending(part, seg.w)}
         data-part={seg.w === null ? undefined : part}
         data-w={seg.w ?? undefined}
@@ -343,19 +402,28 @@
   bind:this={view}
 >
   {#if backdrop}
-    <img class="backdrop" src={backdrop} alt="" />
+    {#if backdropVideo}
+      <!-- svelte-ignore a11y_media_has_caption -->
+      <video class="backdrop" src={backdrop} muted loop playsinline autoplay={animated} preload={animated ? "auto" : "metadata"}></video>
+    {:else}
+      <img class="backdrop" class:drift={anim.background === "slow"} src={backdrop} alt="" />
+    {/if}
     <div class="shade"></div>
   {/if}
   {#if lyric}
+    {#key lyricKey}
     <div
       class="stage pos-{style.position}"
       class:with-credit={lyric.copyright !== ""}
       style:text-align={style.align}
+      style:--total="{Math.round(entrance.total)}ms"
       bind:this={stage}
+      in:enter|global
+      out:leave|global
     >
       <!-- svelte-ignore a11y_no_static_element_interactions (resaltar con el ratón; con teclado no hay palabras que elegir) -->
       <div
-        class="body"
+        class="body enter-{anim.entrance} ambient-{anim.ambient}"
         bind:this={body}
         onpointerdown={markStart}
         onpointermove={markMove}
@@ -371,6 +439,7 @@
         {/if}
       </div>
     </div>
+    {/key}
     {#if lyric.copyright}<p class="copyright">{lyric.copyright}</p>{/if}
   {:else if clock}
     <!-- Sobre una imagen, la hora va en una placa oscura: tiene que leerse siempre, con cualquier fondo. -->
@@ -502,7 +571,57 @@
   .backdrop {
     position: absolute;
     inset: 0;
+    width: 100%;
+    height: 100%;
     object-fit: cover;
+  }
+  /* Movimiento lento de la imagen de fondo (D-024): se acerca y se desplaza un poco, ida y vuelta. */
+  .backdrop.drift { animation: drift 40s ease-in-out infinite alternate; }
+  @keyframes drift {
+    from { transform: scale(1.02) translate(0, 0); }
+    to { transform: scale(1.14) translate(-2.5%, -1.5%); }
+  }
+
+  /* Entrada del texto (D-024). Cada palabra empieza en su momento (--d). */
+  .body.enter-words .word[data-w],
+  .body.enter-lines .word[data-w] { animation: word-in 500ms cubic-bezier(0.2, 0.7, 0.2, 1) var(--d) both; }
+  @keyframes word-in {
+    from { opacity: 0; filter: blur(0.12em); }
+  }
+  /* Máquina de escribir: cada palabra se descubre letra a letra con un recorte; el texto no se parte en letras. */
+  /* WebKit se queda en el penúltimo paso de steps() y nunca muestra la última letra (y una palabra de una letra no
+     aparecía): una segunda animación, sin duración, quita el recorte justo al terminar. */
+  .body.enter-typewriter .word[data-w] {
+    /* WebKit no recorta una caja en línea: cada palabra va en su propia caja. */
+    display: inline-block;
+    animation:
+      type calc(var(--n) * var(--c)) steps(var(--n), end) var(--d) both,
+      typed 0s linear calc(var(--d) + var(--n) * var(--c)) forwards;
+  }
+  @keyframes type {
+    from { clip-path: inset(-0.3em 100% -0.3em -0.3em); }
+    to { clip-path: inset(-0.3em -0.3em -0.3em -0.3em); }
+  }
+  @keyframes typed {
+    to { clip-path: none; }
+  }
+  /* En cajas propias el espacio marcado entre dos palabras no se pinta: cada caja cubre la mitad del espacio. */
+  .body.enter-typewriter .wm.marker[data-w] { margin: 0 -0.17em; padding: 0 0.17em; }
+  /* La referencia aparece cuando termina el texto. */
+  .body:not(.enter-none) .reference { animation: word-in 500ms ease-out var(--total) both; }
+
+  /* Efectos mientras el texto está en pantalla: poco y despacio, para que se siga leyendo. */
+  .body.ambient-breathe { animation: breathe 7s ease-in-out infinite alternate; }
+  @keyframes breathe { to { transform: scale(1.03); } }
+  .body.ambient-float { animation: float 6s ease-in-out infinite alternate; }
+  @keyframes float {
+    from { transform: translateY(-0.12em); }
+    to { transform: translateY(0.12em); }
+  }
+  .body.ambient-glow { animation: glow 4s ease-in-out infinite alternate; }
+  @keyframes glow {
+    from { text-shadow: 0 0.04em 0.12em rgb(0 0 0 / 0.55), 0 0 0.1em rgb(255 255 255 / 0); }
+    to { text-shadow: 0 0.04em 0.12em rgb(0 0 0 / 0.55), 0 0 0.45em rgb(255 255 255 / 0.55); }
   }
   /* Oscurece la imagen lo justo para que el texto se lea sobre cualquier fondo. */
   .shade {

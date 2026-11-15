@@ -598,7 +598,7 @@
       </div>
       <div class="card-body stack" role="tabpanel" id="pane-prepared" aria-labelledby="tab-prepared" hidden={stageTab !== "prepared"}>
         <div class="screen preview">
-          <OutputView content={prepared} style={output.style} preview playing={stageTab === "prepared" && !expanded} marking={markTool.on} onmark={(part, from, to) => markWords("prepared", part, from, to)} />
+          <OutputView content={prepared} style={output.style} preview animated={stageTab === "prepared" && !expanded} playing={stageTab === "prepared" && !expanded} marking={markTool.on} onmark={(part, from, to) => markWords("prepared", part, from, to)} />
           <span class="screen-tag">{t("stage.previewTag")}</span>
         </div>
         <MarkTools content={prepared} saved={fromPlan(prepared)} onclear={() => clearWords("prepared")} />
@@ -620,7 +620,7 @@
       </div>
       <div class="card-body stack" role="tabpanel" id="pane-live" aria-labelledby="tab-live" hidden={stageTab !== "live"}>
         <div class="screen live">
-          <OutputView content={output.content} style={output.style} preview playing={stageTab === "live" && !expanded && output.open} follow={videoTime} marking={markTool.on} onmark={(part, from, to) => markWords("live", part, from, to)} />
+          <OutputView content={output.content} style={output.style} preview animated={stageTab === "live" && !expanded} playing={stageTab === "live" && !expanded && output.open} follow={videoTime} marking={markTool.on} onmark={(part, from, to) => markWords("live", part, from, to)} />
           <span class="screen-tag live">{output.open ? t("live.badge") : t("live.closedBadge")}</span>
         </div>
         <MarkTools content={output.content} saved={fromPlan(output.content)} onclear={() => clearWords("live")} />

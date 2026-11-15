@@ -352,7 +352,8 @@ export interface Platform {
   /** Elige una carpeta y devuelve sus archivos compatibles, subcarpetas incluidas (null si se cancela). */
   pickMediaFolder(title: string): Promise<MediaFile[] | null>;
   /** Elige una imagen o GIF de fondo; null si se cancela. */
-  pickBackground(title: string, filterName: string): Promise<string | null>;
+  /** Con `videos`, un fondo puede ser también un video en bucle (D-024); el logo, no. */
+  pickBackground(title: string, filterName: string, videos?: boolean): Promise<string | null>;
   /** Vuelve a permitir fondos guardados tras reiniciar; devuelve los que siguen existiendo. */
   allowBackgrounds(paths: string[]): Promise<string[]>;
   /** Convierte una presentación a PDF (LibreOffice, PowerPoint o Keynote; o la toma de la caché) y devuelve la ruta del PDF. */
