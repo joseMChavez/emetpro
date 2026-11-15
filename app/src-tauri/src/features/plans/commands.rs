@@ -96,13 +96,13 @@ pub async fn plan_pick_media(app: AppHandle, title: String, filter_name: String)
 pub async fn plan_pick_background(app: AppHandle, title: String, filter_name: String) -> Result<Option<String>, CommandError> {
     let request = picker::Request {
         title,
-        filter: Some((filter_name, dialog_extensions(&[IMAGE_EXTENSIONS]))),
+        filter: Some((filter_name, dialog_extensions(&[IMAGE_EXTENSIONS, VIDEO_EXTENSIONS]))),
         mode: picker::Mode::File,
     };
     let Some(path) = picker::pick(&app, request).await.map_err(internal)?.and_then(|p| p.into_iter().next()) else {
         return Ok(None);
     };
-    if !matches!(media_kind(&path), Some(MediaKind::Image)) {
+    if !matches!(media_kind(&path), Some(MediaKind::Image | MediaKind::Video)) {
         return Ok(None);
     }
     Ok(Some(copy_in(&app, path).await?.to_string_lossy().into_owned()))

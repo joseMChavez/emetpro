@@ -122,6 +122,15 @@
 
   // --- Editar el plan ---
 
+  /** Animaciones en el plan y sus secciones (D-024): null = como lo de arriba. */
+  const toChoice = (value: boolean | null | undefined) => (value === true ? "on" : value === false ? "off" : "inherit");
+  const fromChoice = (value: string) => (value === "on" ? true : value === "off" ? false : null);
+
+  function setSectionAnimate(id: string, value: string) {
+    if (!plan) return;
+    setItems(plan.items.map((i) => (i.id === id && i.kind === "section" ? { ...i, animate: fromChoice(value) } : i)));
+  }
+
   function update(change: Partial<Plan>) {
     if (plan) savePlan({ ...plan, ...change });
   }
@@ -361,6 +370,14 @@
         aria-label={t("plans.date")}
       />
     </div>
+    <label class="anim-row">
+      <span class="muted small">{t("anim.planLabel")}</span>
+      <select class="field compact" value={toChoice(plan.animate)} onchange={(e) => update({ animate: fromChoice(e.currentTarget.value) })}>
+        <option value="inherit">{t("anim.cascade.general")}</option>
+        <option value="on">{t("anim.cascade.on")}</option>
+        <option value="off">{t("anim.cascade.off")}</option>
+      </select>
+    </label>
     <details class="notes" open={plan.notes !== ""}>
       <summary class="muted small">{t("plans.notes")}</summary>
       <textarea
@@ -399,6 +416,18 @@
               {:else}
                 <button class="section-title" onclick={() => (editingSection = item.id)} title={t("plans.renameSection")}>{item.title}</button>
               {/if}
+              <select
+                class="section-anim"
+                class:set={item.animate != null}
+                value={toChoice(item.animate)}
+                onchange={(e) => setSectionAnimate(item.id, e.currentTarget.value)}
+                aria-label="{t('anim.planLabel')} · {item.title}"
+                title={t("anim.planLabel")}
+              >
+                <option value="inherit">✨ {t("anim.cascade.plan")}</option>
+                <option value="on">✨ {t("anim.cascade.on")}</option>
+                <option value="off">⏸ {t("anim.cascade.off")}</option>
+              </select>
               <button class="icon-btn" onclick={() => move(i, -1)} disabled={i === 0} aria-label={t("songs.moveUp")}>▲</button>
               <button class="icon-btn" onclick={() => move(i, 1)} disabled={i === plan.items.length - 1} aria-label={t("songs.moveDown")}>▼</button>
               <button class="icon-btn remove" onclick={() => removeItem(item.id)} aria-label={t("plans.remove", { name: item.title })}>✕</button>
@@ -625,6 +654,12 @@
     cursor: text;
   }
   .section-input { flex: 1; min-width: 0; }
+  .anim-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .field.compact { width: auto; min-height: 32px; padding: 2px 8px; }
+  /* Discreto mientras sigue al plan; destacado si la sección decide. */
+  .section-anim { max-width: 150px; font: inherit; font-size: 12px; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 2px 4px; }
+  .section-anim:hover, .section-anim:focus-visible { border-color: var(--border); }
+  .section-anim.set { color: var(--text); border-color: var(--border); background: var(--surface-2); }
   .item {
     flex: 1;
     min-width: 0;

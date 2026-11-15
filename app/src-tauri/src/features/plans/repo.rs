@@ -13,11 +13,11 @@ fn to_sql_error(e: serde_json::Error) -> rusqlite::Error {
 pub fn upsert_plan(conn: &Connection, plan: &Plan) -> rusqlite::Result<()> {
     let items = serde_json::to_string(&plan.items).map_err(to_sql_error)?;
     conn.execute(
-        "INSERT INTO plans (id, name, date, notes, items, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        "INSERT INTO plans (id, name, date, notes, items, animate, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
          ON CONFLICT(id) DO UPDATE SET name = excluded.name, date = excluded.date, notes = excluded.notes,
-             items = excluded.items, updated_at = excluded.updated_at",
-        params![plan.id, plan.name, plan.date, plan.notes, items, now_secs()],
+             items = excluded.items, animate = excluded.animate, updated_at = excluded.updated_at",
+        params![plan.id, plan.name, plan.date, plan.notes, items, plan.animate, now_secs()],
     )?;
     Ok(())
 }
@@ -26,14 +26,14 @@ fn read_plan(row: &rusqlite::Row) -> rusqlite::Result<Plan> {
     let items: String = row.get(4)?;
     let items: Vec<PlanItem> = serde_json::from_str(&items)
         .map_err(|e| rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e)))?;
-    Ok(Plan { id: row.get(0)?, name: row.get(1)?, date: row.get(2)?, notes: row.get(3)?, items })
+    Ok(Plan { id: row.get(0)?, name: row.get(1)?, date: row.get(2)?, notes: row.get(3)?, items, animate: row.get(5)? })
 }
 
 impl Store {
     /// Los planes con fecha primero, del más próximo al más lejano; después los que no tienen fecha.
     pub fn plans(&self) -> rusqlite::Result<Vec<Plan>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, date, notes, items FROM plans
+            "SELECT id, name, date, notes, items, animate FROM plans
              ORDER BY date IS NULL, date, name COLLATE NOCASE",
         )?;
         let rows = stmt.query_map([], read_plan)?;
@@ -42,7 +42,7 @@ impl Store {
 
     pub fn plan(&self, id: &str) -> rusqlite::Result<Option<Plan>> {
         self.conn
-            .query_row("SELECT id, name, date, notes, items FROM plans WHERE id = ?1", [id], read_plan)
+            .query_row("SELECT id, name, date, notes, items, animate FROM plans WHERE id = ?1", [id], read_plan)
             .optional()
     }
 
@@ -80,7 +80,8 @@ mod tests {
             name: name.into(),
             date: date.map(Into::into),
             notes: String::new(),
-            items: vec![PlanItem { id: "s".into(), content: ItemContent::Section { title: "Alabanza".into() } }],
+            items: vec![PlanItem { id: "s".into(), content: ItemContent::Section { title: "Alabanza".into(), animate: Some(false) } }],
+            animate: Some(true),
         }
     }
 

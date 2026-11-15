@@ -3,6 +3,8 @@
   import { t, type MessageKey } from "$lib/i18n/index.svelte";
   import { toMessage, type Message } from "$lib/core/messages";
   import { platform, type Corner, type FontId, type LogoStyle, type OutputStyle } from "$lib/platform";
+  import AnimationFields from "./AnimationFields.svelte";
+  import { DEFAULT_ANIMATION, isVideo } from "./animation";
 
   let {
     style,
@@ -64,7 +66,7 @@
 
   async function pickImage() {
     try {
-      const path = await platform.pickBackground(t("background.dialogTitle"), t("background.dialogFilter"));
+      const path = await platform.pickBackground(t("background.dialogTitle"), t("background.dialogFilter"), true);
       if (path) onchange({ ...style, backgroundImage: path });
     } catch (e) {
       onerror(toMessage(e));
@@ -134,7 +136,9 @@
         </button>
       {/each}
       <button class="swatch" aria-pressed={style.backgroundImage !== null} onclick={pickImage} title={style.backgroundImage ?? undefined}>
-        {#if style.backgroundImage}
+        {#if style.backgroundImage && isVideo(style.backgroundImage)}
+          <span aria-hidden="true">🎬</span>
+        {:else if style.backgroundImage}
           <img class="dot" src={platform.mediaUrl(style.backgroundImage)} alt="" />
         {/if}
         {t(style.backgroundImage ? "background.change" : "background.pick")}
@@ -148,6 +152,20 @@
     </div>
   {/if}
   <p class="muted small">{t("background.hint")}</p>
+
+  <div class="logo-block">
+    <div class="row">
+      <span class="label">{t("anim.enabled")}</span>
+      <div class="segmented">
+        <button aria-pressed={style.animate !== false} onclick={() => onchange({ ...style, animate: true })}>{t("anim.on")}</button>
+        <button aria-pressed={style.animate === false} onclick={() => onchange({ ...style, animate: false })}>{t("anim.off")}</button>
+      </div>
+    </div>
+    {#if style.animate !== false}
+      <AnimationFields id="style-anim" value={{ ...DEFAULT_ANIMATION, ...style.animation }} onchange={(animation) => onchange({ ...style, animation })} />
+    {/if}
+    <p class="muted small">{t("anim.hint")}</p>
+  </div>
 
   <div class="logo-block">
     <div class="row">

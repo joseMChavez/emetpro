@@ -61,7 +61,7 @@
 <svelte:window onresize={measure} onkeydown={onKeydown} />
 
 <div class="output">
-  <OutputView {content} {style} diagnostics={size} onerror={(message) => platform.reportOutputError(message)} onscreen={reportScreen} onvideotime={(time) => platform.reportVideoTime(time).catch(() => {})} />
+  <OutputView {content} {style} animated diagnostics={size} onerror={(message) => platform.reportOutputError(message)} onscreen={reportScreen} onvideotime={(time) => platform.reportVideoTime(time).catch(() => {})} />
 </div>
 
 <style>

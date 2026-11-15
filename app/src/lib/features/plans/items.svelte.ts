@@ -9,6 +9,8 @@ import { bibles } from "$lib/features/bible/bibles.svelte";
 import { platform, type OutputContent } from "$lib/platform";
 import { withMarks, type Marks } from "$lib/features/marks/marks";
 import { missingFiles, openPlan, savePlan, type PlanItem } from "./plans.svelte";
+import { settings } from "$lib/core/settings.svelte";
+import { DEFAULT_ANIMATION, resolveAnimation } from "$lib/features/output/animation";
 import { bibleFor, missingIn, referenceLabel, scriptureContent } from "./scripture";
 
 const ICONS = { song: "♪", image: "🖼", video: "🎬", pdf: "📄", presentation: "📊", pause: "⏱", scripture: "📖" } as const;
@@ -79,8 +81,36 @@ export function icon(item: PlanItem): string {
   return "";
 }
 
-/** El contenido de un elemento para «Preparado»; null si no se puede mostrar. */
+/** Si la sección de un elemento anima el texto: la última sección antes de él en el plan abierto (D-024). */
+export function sectionAnimate(item: PlanItem): boolean | null {
+  const items = openPlan.plan?.items ?? [];
+  let found: boolean | null = null;
+  for (const i of items) {
+    if (i.id === item.id) return found;
+    if (i.kind === "section") found = i.animate ?? null;
+  }
+  return null;
+}
+
+/** La animación de un elemento según el plan, su sección y la letra; sin cambios si es la general. */
+function withAnimation(item: PlanItem, content: OutputContent | null): OutputContent | null {
+  if (!content || (content.kind !== "text" && content.kind !== "scripture")) return content;
+  const style = { animate: settings.outputStyle?.animate ?? true, animation: { ...DEFAULT_ANIMATION, ...settings.outputStyle?.animation } };
+  const animation = resolveAnimation(style, {
+    plan: openPlan.plan?.animate ?? null,
+    section: sectionAnimate(item),
+    own: songOf(item)?.animation ?? null,
+  });
+  const { animation: _old, ...rest } = content;
+  return animation ? { ...rest, animation } : rest;
+}
+
+/** El contenido de un elemento para «Preparado», con su animación; null si no se puede mostrar. */
 export async function contentOf(item: PlanItem): Promise<OutputContent | null> {
+  return withAnimation(item, await baseContent(item));
+}
+
+async function baseContent(item: PlanItem): Promise<OutputContent | null> {
   switch (item.kind) {
     case "section": return null;
     // Con las palabras resaltadas que se guardaron en el elemento (D-023).

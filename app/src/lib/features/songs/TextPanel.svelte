@@ -1,4 +1,7 @@
 <script lang="ts">
+  import AnimationFields from "$lib/features/output/AnimationFields.svelte";
+  import { DEFAULT_ANIMATION, NO_ANIMATION } from "$lib/features/output/animation";
+  import { settings } from "$lib/core/settings.svelte";
   // Textos: una biblioteca de letras guardadas y el texto libre de siempre. Lo que se presenta en un culto,
   // en orden, va en un plan (features/plans).
   import { t, tCount } from "$lib/i18n/index.svelte";
@@ -75,6 +78,21 @@
     prepareSong(song);
   }
 
+  type AnimationMode = "inherit" | "off" | "own";
+  /** «Sin animación» se guarda como una animación con todo en «ninguno». */
+  let animationMode = $derived<AnimationMode>(
+    !editing?.animation ? "inherit" : JSON.stringify(editing.animation) === JSON.stringify(NO_ANIMATION) ? "off" : "own",
+  );
+
+  function chooseAnimation(mode: AnimationMode) {
+    if (!editing) return;
+    if (mode === "inherit") editing.animation = null;
+    else if (mode === "off") editing.animation = { ...NO_ANIMATION };
+    // Una propia empieza como la general, con algo distinto para que no quede igual a «sin animación».
+    else editing.animation = { ...DEFAULT_ANIMATION, ...settings.outputStyle?.animation, transition: settings.outputStyle?.animation?.transition === "none" ? "fade" : (settings.outputStyle?.animation?.transition ?? "fade") };
+    onprepare(songContent(editing));
+  }
+
   function saveEditing() {
     if (!editing) return;
     const song = { ...editing, title: editing.title.trim() || t("songs.untitled") };
@@ -86,7 +104,7 @@
   async function pickBackground() {
     if (!editing) return;
     try {
-      const path = await platform.pickBackground(t("background.dialogTitle"), t("background.dialogFilter"));
+      const path = await platform.pickBackground(t("background.dialogTitle"), t("background.dialogFilter"), true);
       if (path && editing) {
         allowedBackgrounds.add(path);
         editing.background = path;
@@ -178,6 +196,18 @@
         {/if}
         <button type="button" class="btn" onclick={pickBackground}>{t("background.pick")}</button>
       </div>
+      <!-- Animación de esta letra (D-024): la de arriba, ninguna o una propia. -->
+      <div class="row">
+        <label class="label" for="song-anim">{t("anim.title")}</label>
+        <select id="song-anim" class="field compact" value={animationMode} onchange={(e) => chooseAnimation(e.currentTarget.value as AnimationMode)}>
+          <option value="inherit">{t("anim.song.inherit")}</option>
+          <option value="off">{t("anim.song.off")}</option>
+          <option value="own">{t("anim.song.own")}</option>
+        </select>
+      </div>
+      {#if animationMode === "own" && editing.animation}
+        <AnimationFields id="song-anim" value={editing.animation} onchange={(animation) => editing && ((editing.animation = animation), onprepare(songContent(editing)))} />
+      {/if}
       <div class="row end">
         <button type="button" class="btn ghost" onclick={() => (editing = null)}>{t("songs.cancel")}</button>
         <button type="submit" class="btn primary" disabled={editingSlides.length === 0}>{t("songs.save")}</button>
@@ -237,6 +267,7 @@
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .row.end { justify-content: flex-end; }
+  .field.compact { width: auto; min-height: 36px; padding: 4px 8px; }
   .row .name { max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .actions { display: flex; gap: 8px; }
   .notice {

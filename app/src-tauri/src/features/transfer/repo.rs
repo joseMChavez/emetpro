@@ -26,7 +26,7 @@ mod tests {
     use crate::features::songs::domain::Song;
 
     fn song(id: &str) -> Song {
-        Song { id: id.into(), title: id.into(), singer: String::new(), writer: String::new(), body: "x".into(), background: None }
+        Song { id: id.into(), title: id.into(), singer: String::new(), writer: String::new(), body: "x".into(), background: None, animation: None }
     }
 
     #[test]
@@ -40,6 +40,7 @@ mod tests {
             name: "Domingo".into(),
             date: None,
             notes: String::new(),
+            animate: None,
             items: ["b", "a"]
                 .iter()
                 .map(|id| PlanItem { id: id.to_string(), content: ItemContent::Song { song_id: id.to_string(), marks: Default::default() } })
