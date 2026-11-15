@@ -104,6 +104,7 @@ app/src/
       plans/  bible/  songs/  media/  clock/      panel + estado + index.ts
       output/            OutputView (lo que se dibuja en pantalla), OutputWindow, StylePanel, SlideStrip
       presentations/     descarga de LibreOffice
+      marks/             palabras resaltadas en versículos y letras (D-023): marks.ts (reglas, sin Tauri), MarkTools (la barra «Resaltar» de la consola)
       remote/            control remoto: protocol.ts (lo que se dicen teléfono y consola), RemoteApp (la página del teléfono, ruta /remote), RemoteSettings; board.ts y BoardPad (pizarra), BoardLayer (lo dibujado en la salida)
       stream/            OBS
       settings/          vista de Ajustes

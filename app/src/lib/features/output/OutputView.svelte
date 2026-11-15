@@ -36,9 +36,12 @@
     const words: ScreenWord[] = [];
     const range = document.createRange();
     const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+    const count = { text: 0, second: 0 };
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
       const p = node.parentElement?.closest("p");
       const k = p?.classList.contains("reference") ? "ref" : p?.classList.contains("second") ? "second" : "text";
+      // Una palabra resaltada (D-023) lleva su marca: el teléfono la pinta igual.
+      const m = (node.parentElement?.closest("[data-mark]") as HTMLElement | null)?.dataset.mark;
       for (const match of (node.textContent ?? "").matchAll(/\S+/gu)) {
         range.setStart(node, match.index);
         range.setEnd(node, match.index + match[0].length);
@@ -54,6 +57,8 @@
           w: scale(rect.width, box.width),
           h: scale(rect.height, box.height),
           k,
+          ...(k === "ref" ? {} : { i: count[k]++ }),
+          ...(m ? { m } : {}),
         });
         if (words.length >= MAX_WORDS) return words;
       }
@@ -73,6 +78,7 @@
   import BoardLayer from "$lib/features/remote/BoardLayer.svelte";
   import { COORD, layerKey, PAPER_COLOR, type ScreenWord } from "$lib/features/remote/board";
   import { sheetPaper } from "$lib/features/remote/board.svelte";
+  import { currentMarks, MARK_HEX, segments, type MarkPart, type WordMark } from "$lib/features/marks/marks";
 
   let {
     content,
@@ -81,6 +87,8 @@
     preview = false,
     onerror,
     onscreen,
+    marking = false,
+    onmark,
   }: {
     content: OutputContent;
     style?: OutputStyle;
@@ -90,7 +98,42 @@
     onerror?: (message: string) => void;
     /** La ventana de salida mide dónde quedó cada palabra, para que el teléfono dibuje justo encima. */
     onscreen?: (words: ScreenWord[]) => void;
+    /** Resaltar palabras (D-023): las palabras se pueden tocar, y arrastrar para marcar varias. */
+    marking?: boolean;
+    onmark?: (part: MarkPart, from: number, to: number) => void;
   } = $props();
+
+  /** Palabras que se están marcando con el dedo o el ratón, antes de soltar. */
+  let drag = $state<{ part: MarkPart; from: number; to: number } | null>(null);
+
+  function wordAt(target: EventTarget | null): { part: MarkPart; w: number } | null {
+    const el = (target as Element | null)?.closest?.("[data-w]") as HTMLElement | null;
+    if (!el?.dataset.w || !el.dataset.part) return null;
+    return { part: el.dataset.part as MarkPart, w: Number(el.dataset.w) };
+  }
+
+  function markStart(e: PointerEvent) {
+    const word = marking ? wordAt(e.target) : null;
+    if (!word || !body) return;
+    e.preventDefault();
+    body.setPointerCapture(e.pointerId);
+    drag = { part: word.part, from: word.w, to: word.w };
+  }
+
+  function markMove(e: PointerEvent) {
+    if (!drag) return;
+    const word = wordAt(document.elementFromPoint(e.clientX, e.clientY));
+    if (word && word.part === drag.part) drag.to = word.w;
+  }
+
+  function markEnd() {
+    if (drag) onmark?.(drag.part, drag.from, drag.to);
+    drag = null;
+  }
+
+  function pending(part: MarkPart, w: number | null): boolean {
+    return drag !== null && w !== null && drag.part === part && w >= Math.min(drag.from, drag.to) && w <= Math.max(drag.from, drag.to);
+  }
 
   let video = $state<HTMLVideoElement>();
   let canvas = $state<HTMLCanvasElement>();
@@ -111,6 +154,7 @@
         reference: "",
         // La autoría de una letra va solo en la primera diapositiva.
         copyright: content.index === 0 ? (content.credit ?? "") : "",
+        marks: currentMarks(content, "text"),
         second: null,
       };
     }
@@ -121,7 +165,12 @@
         text: verse?.text ?? "",
         reference: verse ? `${verse.reference} · ${content.version}` : "",
         copyright: [content.copyright, content.second?.copyright].filter(Boolean).join(" · "),
-        second: second && { text: second.text, reference: `${second.reference} · ${content.second!.version}` },
+        marks: currentMarks(content, "text"),
+        second: second && {
+          text: second.text,
+          reference: `${second.reference} · ${content.second!.version}`,
+          marks: currentMarks(content, "second"),
+        },
       };
     }
     return null;
@@ -207,7 +256,7 @@
 
   // Después de ajustar el tamaño: dónde quedó cada palabra. Otra vez cuando cargan los tipos de letra.
   $effect(() => {
-    void [lyric?.text, lyric?.reference, lyric?.second?.text, style.fontScale, style.position, style.align, style.font, width, height];
+    void [lyric?.text, lyric?.reference, lyric?.second?.text, lyric?.marks, lyric?.second?.marks, style.fontScale, style.position, style.align, style.font, width, height];
     if (!onscreen) return;
     if (!lyric || !body || !view) {
       onscreen([]);
@@ -226,9 +275,18 @@
   });
 </script>
 
+{#snippet marked(text: string, part: MarkPart, marks: Map<number, WordMark>)}{#each segments(text, marks) as seg}{#if seg.mark || (marking && seg.w !== null)}<span
+        class="word {seg.mark ? `wm ${seg.mark.style}` : ''} {seg.w === null ? 'gap' : ''}"
+        class:pending={pending(part, seg.w)}
+        data-part={seg.w === null ? undefined : part}
+        data-w={seg.w ?? undefined}
+        data-mark={seg.mark ? `${seg.mark.style}:${seg.mark.color}` : undefined}
+        style:--mc={seg.mark ? MARK_HEX[seg.mark.color] : undefined}>{seg.text}</span>{:else}{seg.text}{/if}{/each}{/snippet}
+
 <div
   class="view"
   class:preview
+  class:marking
   class:pattern={content.kind === "testPattern"}
   class:expired={clock?.expired}
   class:logo-bottom={logo !== null && style.logo.corner.startsWith("bottom")}
@@ -249,12 +307,20 @@
       style:text-align={style.align}
       bind:this={stage}
     >
-      <div class="body" bind:this={body}>
-        <p class="text">{lyric.text}</p>
+      <!-- svelte-ignore a11y_no_static_element_interactions (resaltar con el ratón; con teclado no hay palabras que elegir) -->
+      <div
+        class="body"
+        bind:this={body}
+        onpointerdown={markStart}
+        onpointermove={markMove}
+        onpointerup={markEnd}
+        onpointercancel={() => (drag = null)}
+      >
+        <p class="text">{@render marked(lyric.text, "text", lyric.marks)}</p>
         {#if lyric.reference}<p class="reference">{lyric.reference}</p>{/if}
         {#if lyric.second}
           <hr class="divider" />
-          <p class="text second">{lyric.second.text}</p>
+          <p class="text second">{@render marked(lyric.second.text, "second", lyric.second.marks)}</p>
           <p class="reference">{lyric.second.reference}</p>
         {/if}
       </div>
@@ -393,6 +459,36 @@
     border-top: 0.06em solid rgb(245 245 240 / 0.45);
   }
   .text.second { color: rgb(245 245 240 / 0.88); }
+  /* Palabras resaltadas (D-023). El marcador lleva el texto oscuro, como un resaltador sobre papel; el relleno de los
+     lados no mueve el texto (margen negativo). */
+  .wm.marker {
+    margin: 0 -0.1em;
+    padding: 0 0.1em;
+    border-radius: 0.14em;
+    background: var(--mc);
+    color: #141414;
+    text-shadow: none;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+  /* El espacio entre dos palabras marcadas solo rellena el hueco: con relleno propio taparía la letra de al lado. */
+  .wm.marker.gap { margin: 0; padding: 0; border-radius: 0; }
+  /* Subrayado como fondo, no como text-decoration: la sombra del texto no lo corta y sale seguido entre palabras. */
+  .wm.underline {
+    background: linear-gradient(var(--mc), var(--mc)) left bottom / 100% 0.1em no-repeat;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+  .wm.color { color: var(--mc); }
+  /* Resaltando: las palabras se pueden tocar aunque la vista previa no reciba el ratón. */
+  .view.marking .word[data-w] {
+    pointer-events: auto;
+    cursor: pointer;
+    border-radius: 0.1em;
+  }
+  .view.marking .body { touch-action: none; user-select: none; }
+  .view.marking .word[data-w]:hover,
+  .word.pending { outline: 0.06em solid rgb(255 255 255 / 0.85); outline-offset: 0.04em; }
   .clock {
     position: relative;
     margin: 0;

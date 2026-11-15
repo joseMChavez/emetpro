@@ -131,7 +131,7 @@ mod tests {
             .items
             .iter()
             .map(|i| match &i.content {
-                ItemContent::Song { song_id } => song_id.as_str(),
+                ItemContent::Song { song_id, .. } => song_id.as_str(),
                 other => panic!("{other:?}"),
             })
             .collect();

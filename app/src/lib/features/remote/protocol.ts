@@ -1,6 +1,7 @@
 // Lo que se dicen el teléfono y la consola a través del servidor del control remoto (src-tauri/src/features/remote).
 // Este archivo no importa nada de Tauri: lo usa también la página del teléfono, que corre en un navegador.
 import type { BoardMessage } from "./board";
+import type { MarkColor, MarkPart, MarkStyle } from "$lib/features/marks/marks";
 
 /** Órdenes del teléfono. Deben coincidir con `domain::Command` del backend. */
 export type RemoteCommand =
@@ -16,7 +17,11 @@ export type RemoteCommand =
   /** Ir a la posición n (desde 1) de lo que está en pantalla: página, diapositiva o versículo. */
   | { type: "goTo"; n: number }
   /** Poner en pantalla una hoja de la pizarra (board.ts). */
-  | { type: "showSheet"; id: string };
+  | { type: "showSheet"; id: string }
+  /** Resaltar (o desmarcar) de la palabra `from` a la `to` de lo que está en pantalla (D-023). */
+  | { type: "mark"; part: MarkPart; from: number; to: number; style: MarkStyle; color: MarkColor }
+  /** Quitar las palabras resaltadas del versículo o la diapositiva en pantalla. */
+  | { type: "clearMarks" };
 
 /** Algo que se puede volver a poner en pantalla desde el teléfono: lo preparado en la consola o lo reciente. */
 export interface RemoteItem {

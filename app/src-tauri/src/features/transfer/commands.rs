@@ -186,7 +186,7 @@ pub fn transfer_import_apply(
             .setlist
             .iter()
             .filter_map(|i| resolution.ids.get(i))
-            .map(|id| PlanItem { id: uuid::Uuid::new_v4().to_string(), content: ItemContent::Song { song_id: id.clone() } })
+            .map(|id| PlanItem { id: uuid::Uuid::new_v4().to_string(), content: ItemContent::Song { song_id: id.clone(), marks: Default::default() } })
             .collect(),
     });
     let new_plan = new_plan.filter(|p| !p.items.is_empty());
@@ -253,7 +253,7 @@ pub async fn transfer_export(
         let plan = with_store(&db, |store| store.plan(&id))?.ok_or_else(|| internal("el plan ya no existe"))?;
         for item in plan.items {
             match item.content {
-                ItemContent::Song { song_id } if !setlist.contains(&song_id) => setlist.push(song_id),
+                ItemContent::Song { song_id, .. } if !setlist.contains(&song_id) => setlist.push(song_id),
                 _ => {}
             }
         }

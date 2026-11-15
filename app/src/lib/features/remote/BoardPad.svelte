@@ -22,8 +22,10 @@
     type InkColor,
     type InkSize,
     type InkTool,
+    type ScreenWord,
     type Stroke,
   } from "./board";
+  import { MARK_COLORS, MARK_HEX, MARK_STYLES, type MarkColor, type MarkPart, type MarkStyle } from "$lib/features/marks/marks";
   import type { RemoteCommand, RemoteStatus } from "./protocol";
 
   let {
@@ -67,9 +69,12 @@
     eraser: "M15 4l5 5-10 10H6l-3-3L15 4ZM9 19h11M11 8l5 5",
     undo: "M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3",
     trash: "M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3",
+    words: "M4 21h16M7 17l5-13 5 13M8.6 13h6.8",
+    zoom: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14ZM21 21l-5-5M8 11h6M11 8v6",
   };
 
-  type Tool = InkTool | "eraser";
+  /** «Resaltar palabras» (D-023) marca palabras del texto en vez de dibujar. */
+  type Tool = InkTool | "eraser" | "words";
   /** Lo que se puede deshacer: un trazo que se dibujó, o trazos que se borraron (con el borrador o «Borrar todo»). */
   type Undo = { layer: string; added: string | null; removed: Stroke[] };
 
@@ -77,6 +82,13 @@
   let color = $state<InkColor>("red");
   let size = $state<InkSize>("medium");
   let undos = $state<Undo[]>([]);
+  let markStyle = $state<MarkStyle>("marker");
+  let markColor = $state<MarkColor>("yellow");
+  /** En un teléfono las palabras del proyector quedan diminutas: al resaltar se ven en letra grande. En una tablet no. */
+  const phone = Math.min(globalThis.screen?.width ?? 0, globalThis.screen?.height ?? 0) < 600;
+  let zoomed = $state(phone);
+  /** Las palabras que se están marcando con el dedo, antes de soltar. */
+  let picking = $state<{ part: MarkPart; from: number; to: number; pointer: number } | null>(null);
   let wipeArmed = $state(false);
   let wipeTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -109,6 +121,27 @@
   /** Las palabras medidas en la pantalla, si son de lo que está ahora. */
   let words = $derived(measured && layer && measured.layer === layer && measured.words.length > 0 ? measured.words : null);
   let canUndo = $derived(undos.some((u) => u.layer === layer));
+  /** Las palabras que se pueden resaltar: las del texto y la segunda versión, no las de la referencia. */
+  let markable = $derived(words?.filter((w) => w.k !== "ref" && w.i !== undefined) ?? []);
+  let hasMarked = $derived(words?.some((w) => w.m) ?? false);
+  let marking = $derived(tool === "words");
+  /** Las palabras en párrafos para la vista en letra grande: el texto se ajusta al ancho del teléfono, pero se corta
+   *  donde el proyector tiene un salto de verdad (un renglón que termina antes que el más largo, como en las letras). */
+  let lines = $derived.by(() => {
+    const list = words ?? [];
+    const right = Math.max(0, ...list.map((w) => w.x + w.w));
+    const left = Math.min(COORD, ...list.map((w) => w.x));
+    const out: ScreenWord[][] = [];
+    let last: ScreenWord | null = null;
+    for (const word of list) {
+      const newLine = last !== null && word.y > last.y + last.h / 2;
+      const early = last !== null && last.x + last.w < left + (right - left) * 0.75;
+      if (!last || word.k !== last.k || (newLine && early)) out.push([]);
+      out[out.length - 1].push(word);
+      last = word;
+    }
+    return out;
+  });
   let hasStrokes = $derived.by(() => {
     void version;
     return layer !== null && (board.layers[layer]?.length ?? 0) > 0;
@@ -158,7 +191,69 @@
     return Math.max(-1000, Math.min(COORD + 1000, Math.round((px / size) * COORD)));
   }
 
+  // ---- Resaltar palabras ----
+
+  /** La palabra bajo el dedo, con un margen alrededor: el dedo es más grueso que una palabra pequeña. */
+  function wordAtPoint(x: number, y: number): ScreenWord | null {
+    let best: ScreenWord | null = null;
+    let bestDistance = Infinity;
+    for (const word of markable) {
+      const left = (word.x / COORD) * width;
+      const top = (word.y / COORD) * height;
+      const w = (word.w / COORD) * width;
+      const h = (word.h / COORD) * height;
+      const pad = Math.max(8, h * 0.3);
+      if (x < left - pad || x > left + w + pad || y < top - pad || y > top + h + pad) continue;
+      const distance = Math.hypot(x - (left + w / 2), (y - (top + h / 2)) * 2);
+      if (distance < bestDistance) [best, bestDistance] = [word, distance];
+    }
+    return best;
+  }
+
+  /** La palabra de la vista en letra grande bajo el dedo. */
+  function bigWordAt(x: number, y: number): { part: MarkPart; i: number } | null {
+    const el = (document.elementFromPoint(x, y) as HTMLElement | null)?.closest("[data-i]") as HTMLElement | null;
+    return el?.dataset.i && el.dataset.part ? { part: el.dataset.part as MarkPart, i: Number(el.dataset.i) } : null;
+  }
+
+  function pickStart(event: PointerEvent, found: { part: MarkPart; i: number } | null) {
+    if (!found || !event.isPrimary || !online || picking) return;
+    event.preventDefault();
+    (event.currentTarget as Element).setPointerCapture(event.pointerId);
+    picking = { part: found.part, from: found.i, to: found.i, pointer: event.pointerId };
+    redraw();
+  }
+
+  function pickMove(found: { part: MarkPart; i: number } | null) {
+    if (picking && found && found.part === picking.part) picking.to = found.i;
+    redraw();
+  }
+
+  function pickEnd(event: PointerEvent) {
+    if (picking?.pointer !== event.pointerId) return;
+    command({ type: "mark", part: picking.part, from: picking.from, to: picking.to, style: markStyle, color: markColor });
+    picking = null;
+    redraw();
+  }
+
+  function fromScreenWord(word: ScreenWord | null): { part: MarkPart; i: number } | null {
+    return word && word.i !== undefined ? { part: word.k === "second" ? "second" : "text", i: word.i } : null;
+  }
+
+  function isPicked(word: ScreenWord): boolean {
+    if (!picking || word.i === undefined || (word.k === "second") !== (picking.part === "second")) return false;
+    return word.i >= Math.min(picking.from, picking.to) && word.i <= Math.max(picking.from, picking.to);
+  }
+
+  function chooseTool(id: Tool) {
+    tool = id;
+  }
+
   function down(event: PointerEvent) {
+    if (tool === "words") {
+      if (ink) pickStart(event, fromScreenWord(wordAtPoint(...position(event))));
+      return;
+    }
     if (!event.isPrimary || !layer || !online || !ink || current || erasing) return;
     event.preventDefault();
     ink.setPointerCapture(event.pointerId);
@@ -177,6 +272,10 @@
   }
 
   function move(event: PointerEvent) {
+    if (picking?.pointer === event.pointerId) {
+      pickMove(fromScreenWord(wordAtPoint(...position(event))));
+      return;
+    }
     if (erasing?.pointer === event.pointerId) {
       for (const e of event.getCoalescedEvents?.() ?? [event]) eraseAt(...position(e));
       return;
@@ -195,6 +294,7 @@
   }
 
   function up(event: PointerEvent) {
+    if (picking) return pickEnd(event);
     if (erasing?.pointer === event.pointerId) {
       if (erasing.removed.length > 0) remember({ layer: erasing.layer, added: null, removed: erasing.removed });
       erasing = null;
@@ -245,6 +345,10 @@
   /** «Borrar todo» pregunta con un segundo toque: no se puede recuperar salvo con Deshacer. */
   function wipe() {
     if (!layer) return;
+    if (marking) {
+      command({ type: "clearMarks" });
+      return;
+    }
     if (!wipeArmed) {
       wipeArmed = true;
       clearTimeout(wipeTimer);
@@ -280,6 +384,14 @@
     if (!ctx) return;
     const list = current && current.layer === layer ? [...strokes().filter((s) => s.id !== current!.stroke.id), current.stroke] : strokes();
     drawLayer(ctx, list, ink.width, ink.height, paper);
+    if (!picking) return;
+    // Las palabras que se están marcando: un recuadro claro, hasta soltar el dedo.
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = Math.max(2, ink.height * 0.006);
+    for (const word of markable) {
+      if (!isPicked(word)) continue;
+      ctx.strokeRect((word.x / COORD) * ink.width, (word.y / COORD) * ink.height, (word.w / COORD) * ink.width, (word.h / COORD) * ink.height);
+    }
   }
 
   /** El texto de la pantalla, cada palabra donde quedó en el proyector: así se subraya justo encima. */
@@ -299,6 +411,22 @@
       const wh = (word.h / COORD) * h;
       ctx.font = `${word.k === "ref" ? 650 : 500} ${wh / 1.2}px system-ui, sans-serif`;
       ctx.fillStyle = word.k === "ref" ? "#f2d58a" : word.k === "second" ? "rgb(245 245 240 / 0.88)" : "#f5f5f0";
+      // Resaltada (D-023): como en el proyector.
+      const [markedStyle, markedColor] = (word.m ?? "").split(":") as [MarkStyle?, MarkColor?];
+      const hex = markedColor ? MARK_HEX[markedColor] : undefined;
+      if (hex && markedStyle === "marker") {
+        ctx.fillStyle = hex;
+        ctx.fillRect(x - wh * 0.08, y, ww + wh * 0.16, wh);
+        ctx.fillStyle = "#141414";
+      } else if (hex && markedStyle === "color") {
+        ctx.fillStyle = hex;
+      } else if (hex && markedStyle === "underline") {
+        const thick = Math.max(2, wh * 0.09);
+        const fill = ctx.fillStyle;
+        ctx.fillStyle = hex;
+        ctx.fillRect(x, y + wh * 0.94 - thick / 2, ww, thick);
+        ctx.fillStyle = fill;
+      }
       const natural = ctx.measureText(word.t).width;
       ctx.save();
       ctx.translate(x, y + wh * 0.8);
@@ -372,7 +500,34 @@
   </header>
 
   <div class="stage">
-    {#if canvas}
+    {#if canvas && marking && (markable.length === 0 || zoomed)}
+      {#if markable.length === 0}
+        <div class="empty"><p>{t("remote.board.wordsNone")}</p></div>
+      {:else}
+        <!-- Letra grande para elegir palabras con el dedo; los renglones son los del proyector. -->
+        <div
+          class="big"
+          role="application"
+          aria-label={t("remote.board.wordsHint")}
+          onpointerdown={(e) => pickStart(e, bigWordAt(e.clientX, e.clientY))}
+          onpointermove={(e) => picking?.pointer === e.pointerId && pickMove(bigWordAt(e.clientX, e.clientY))}
+          onpointerup={pickEnd}
+          onpointercancel={() => (picking = null)}
+        >
+          {#each lines as line, n (n)}
+            <p class:ref={line[0].k === "ref"} class:second={line[0].k === "second"}>
+              {#each line as word, j (j)}{@const [ms, mc] = (word.m ?? "").split(":") as [MarkStyle?, MarkColor?]}<span
+                  class="bw {ms ?? ''}"
+                  class:picked={isPicked(word)}
+                  data-part={word.k === "ref" ? undefined : word.k === "second" ? "second" : "text"}
+                  data-i={word.k === "ref" ? undefined : word.i}
+                  style:--mc={mc ? MARK_HEX[mc] : undefined}>{word.t}</span>{j < line.length - 1 ? " " : ""}{/each}
+            </p>
+          {/each}
+        </div>
+        <p class="turn">{t("remote.board.wordsHint")}</p>
+      {/if}
+    {:else if canvas}
       <div
         class="frame"
         style:--aspect={aspect}
@@ -397,6 +552,7 @@
         <canvas
           class="ink"
           class:erasing={tool === "eraser"}
+          class:words={marking}
           bind:this={ink}
           onpointerdown={down}
           onpointermove={move}
@@ -415,12 +571,34 @@
 
   <div class="tools">
     <div class="group" role="radiogroup" aria-label={t("remote.board.tool")}>
-      {#each [["pen", "remote.board.pen"], ["marker", "remote.board.marker"], ["eraser", "remote.board.eraser"]] as [id, label] (id)}
-        <button class="tool" role="radio" aria-checked={tool === id} aria-label={t(label as MessageKey)} onclick={() => (tool = id as Tool)}>
+      {#each [["pen", "remote.board.pen"], ["marker", "remote.board.marker"], ["eraser", "remote.board.eraser"], ["words", "remote.board.words"]] as [id, label] (id)}
+        <button class="tool" role="radio" aria-checked={tool === id} aria-label={t(label as MessageKey)} onclick={() => chooseTool(id as Tool)}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d={ICONS[id as Tool]} /></svg>
         </button>
       {/each}
     </div>
+    {#if marking}
+      <div class="group" role="radiogroup" aria-label={t("marks.color")}>
+        {#each MARK_COLORS as c (c)}
+          <button class="swatch" role="radio" aria-checked={markColor === c} aria-label={t(`marks.color.${c}`)} style:--ink={MARK_HEX[c]} onclick={() => (markColor = c)}></button>
+        {/each}
+      </div>
+      <div class="group" role="radiogroup" aria-label={t("marks.style")}>
+        {#each MARK_STYLES as s (s)}
+          <button class="tool" role="radio" aria-checked={markStyle === s} aria-label={t(`marks.style.${s}`)} onclick={() => (markStyle = s)}>
+            <span class="glyph {s}" style:--mc={MARK_HEX[markColor]}>A</span>
+          </button>
+        {/each}
+      </div>
+      <div class="group">
+        <button class="tool" aria-pressed={zoomed} onclick={() => (zoomed = !zoomed)} aria-label={t(zoomed ? "remote.board.zoomOut" : "remote.board.zoomIn")}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d={ICONS.zoom} /></svg>
+        </button>
+        <button class="tool" onclick={wipe} disabled={!hasMarked || !online} aria-label={t("marks.clear")}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d={ICONS.trash} /></svg>
+        </button>
+      </div>
+    {:else}
     <div class="group" role="radiogroup" aria-label={t("remote.board.color")}>
       {#each COLORS as c (c)}
         <button
@@ -449,6 +627,7 @@
         {#if wipeArmed}<span>{t("remote.board.wipeConfirm")}</span>{/if}
       </button>
     </div>
+    {/if}
   </div>
 </div>
 
@@ -531,6 +710,31 @@
   .under, .ink { position: absolute; inset: 0; width: 100%; height: 100%; }
   img.under { object-fit: contain; }
   .ink { touch-action: none; cursor: crosshair; }
+  .ink.words { cursor: pointer; }
+  /* Resaltar en letra grande (D-023): texto claro sobre el fondo del lienzo, cada palabra un blanco fácil. */
+  .big {
+    width: min(100cqw, 720px);
+    max-height: calc(100cqh - 30px);
+    overflow-y: auto;
+    padding: 12px 6px;
+    touch-action: none;
+    font-size: clamp(20px, 6cqw, 30px);
+    line-height: 1.55;
+    color: #f5f5f0;
+  }
+  .big p { margin: 0 0 0.15em; }
+  .big p.ref { font-size: 0.6em; font-weight: 650; color: #f2d58a; margin-bottom: 0.6em; }
+  .big p.second { color: rgb(245 245 240 / 0.85); }
+  .bw { padding: 0.04em 0.06em; border-radius: 0.15em; }
+  .bw.marker { background: var(--mc); color: #141414; }
+  .bw.underline { text-decoration: underline 0.12em var(--mc); text-underline-offset: 0.16em; }
+  .bw.color { color: var(--mc); }
+  .bw.picked { outline: 2px solid #fff; outline-offset: 1px; }
+  .glyph { font-size: 18px; font-weight: 800; line-height: 1; padding: 2px 4px; border-radius: 4px; }
+  .glyph.marker { background: var(--mc); color: #141414; }
+  .glyph.underline { text-decoration: underline 3px var(--mc); text-underline-offset: 3px; }
+  .glyph.color { color: var(--mc); }
+  .tool[aria-pressed="true"] { background: #f2f2f2; color: #111; }
   .approx {
     position: absolute;
     inset: 6%;

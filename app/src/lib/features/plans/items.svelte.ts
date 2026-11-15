@@ -7,7 +7,8 @@ import { library, songContent } from "$lib/features/songs/library.svelte";
 import { splitSlides } from "$lib/features/songs/slides";
 import { bibles } from "$lib/features/bible/bibles.svelte";
 import { platform, type OutputContent } from "$lib/platform";
-import { missingFiles, type PlanItem } from "./plans.svelte";
+import { withMarks, type Marks } from "$lib/features/marks/marks";
+import { missingFiles, openPlan, savePlan, type PlanItem } from "./plans.svelte";
 import { bibleFor, missingIn, referenceLabel, scriptureContent } from "./scripture";
 
 const ICONS = { song: "♪", image: "🖼", video: "🎬", pdf: "📄", presentation: "📊", pause: "⏱", scripture: "📖" } as const;
@@ -82,10 +83,14 @@ export function icon(item: PlanItem): string {
 export async function contentOf(item: PlanItem): Promise<OutputContent | null> {
   switch (item.kind) {
     case "section": return null;
-    case "scripture": return scriptureContent(item);
+    // Con las palabras resaltadas que se guardaron en el elemento (D-023).
+    case "scripture": {
+      const content = await scriptureContent(item);
+      return content && withMarks(content, item.marks);
+    }
     case "song": {
       const song = songOf(item);
-      return song ? songContent(song) : null;
+      return song ? withMarks(songContent(song), item.marks) : null;
     }
     case "pause": {
       const background = item.background && !missingFiles.has(item.background) ? item.background : null;
@@ -125,4 +130,25 @@ export function markShown(planId: string, onScreen: OutputContent) {
       : screenKey(onScreen) !== null && screenKey(onScreen) === screenKey(c);
   const done = session.shown[planId] ?? [];
   if (same && !done.includes(current.id)) session.shown[planId] = [...done, current.id];
+}
+
+/** El contenido es el que se preparó desde el plan abierto (en cualquier posición): sus marcas se guardan allí. */
+export function fromPlan(content: OutputContent): boolean {
+  const current = session.current;
+  if (!current || (content.kind !== "text" && content.kind !== "scripture")) return false;
+  const key = screenKey(content);
+  return key !== null && key === screenKey(current.content) && openPlan.plan?.items.some((i) => i.id === current.id) === true;
+}
+
+/** Guarda en su elemento del plan las palabras resaltadas de lo preparado desde él (D-023). */
+export function saveMarks(content: OutputContent) {
+  if (!fromPlan(content) || (content.kind !== "text" && content.kind !== "scripture")) return;
+  const plan = openPlan.plan!;
+  const id = session.current!.id;
+  const marks = content.marks && Object.keys(content.marks).length > 0 ? ($state.snapshot(content.marks) as Marks) : undefined;
+  const items = plan.items.map((item) =>
+    item.id === id && (item.kind === "song" || item.kind === "scripture") ? { ...item, marks } : item,
+  );
+  savePlan({ ...plan, items });
+  session.current = { id, content: withMarks(session.current!.content, marks) };
 }

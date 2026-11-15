@@ -1,6 +1,8 @@
 // Control remoto: lo que puede pedir un teléfono y cómo se le da acceso. Reglas puras, sin red ni Tauri.
 use serde::{Deserialize, Serialize};
 
+use crate::features::output::domain::{MarkColor, MarkStyle};
+
 /// Puertos que se prueban en orden: el primero libre es el del control remoto.
 pub const PORTS: std::ops::RangeInclusive<u16> = 7300..=7309;
 
@@ -27,6 +29,18 @@ pub enum Command {
     GoTo { n: u32 },
     /// Poner en pantalla una hoja de la pizarra (board.rs), por su id.
     ShowSheet { id: String },
+    /// Resaltar (o desmarcar) de la palabra `from` a la `to` de lo que está en pantalla (D-023).
+    Mark { part: MarkPart, from: u32, to: u32, style: MarkStyle, color: MarkColor },
+    /// Quitar las palabras resaltadas del versículo o la diapositiva en pantalla.
+    ClearMarks,
+}
+
+/// El texto principal o, en la Biblia, la segunda versión.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MarkPart {
+    Text,
+    Second,
 }
 
 /// Más largo que esto no es un id ni una clave de la consola.
@@ -50,6 +64,8 @@ impl Command {
             Command::PlanItem { id } => !id.is_empty() && id.len() <= MAX_TEXT,
             Command::GoTo { n } => (1..=10_000).contains(n),
             Command::ShowSheet { id } => !id.is_empty() && id.len() <= 64,
+            // La ventana de salida mide como mucho 600 palabras.
+            Command::Mark { from, to, .. } => *from < 1000 && *to < 1000,
             _ => true,
         }
     }
@@ -120,6 +136,13 @@ mod tests {
         assert_eq!(Command::parse(r#"{"type":"goTo","n":-1}"#), None);
         assert_eq!(Command::parse(r#"{"type":"showSheet","id":"h1"}"#), Some(Command::ShowSheet { id: "h1".into() }));
         assert_eq!(Command::parse(r#"{"type":"showSheet","id":""}"#), None);
+        assert_eq!(
+            Command::parse(r#"{"type":"mark","part":"second","from":3,"to":1,"style":"underline","color":"pink"}"#),
+            Some(Command::Mark { part: MarkPart::Second, from: 3, to: 1, style: MarkStyle::Underline, color: MarkColor::Pink })
+        );
+        assert_eq!(Command::parse(r#"{"type":"mark","part":"text","from":0,"to":5000,"style":"marker","color":"red"}"#), None);
+        assert_eq!(Command::parse(r#"{"type":"mark","part":"text","from":0,"to":1,"style":"glitter","color":"red"}"#), None);
+        assert_eq!(Command::parse(r#"{"type":"clearMarks"}"#), Some(Command::ClearMarks));
         assert_eq!(Command::parse(r#"{"type":"setBible","id":""}"#), None);
         assert_eq!(Command::parse(&format!(r#"{{"type":"show","key":"{}"}}"#, "x".repeat(600))), None);
     }
