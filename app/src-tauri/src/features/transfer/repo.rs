@@ -42,7 +42,7 @@ mod tests {
             notes: String::new(),
             items: ["b", "a"]
                 .iter()
-                .map(|id| PlanItem { id: id.to_string(), content: ItemContent::Song { song_id: id.to_string() } })
+                .map(|id| PlanItem { id: id.to_string(), content: ItemContent::Song { song_id: id.to_string(), marks: Default::default() } })
                 .collect(),
         };
         store.import_songs(&[song("b"), song("c")], Some(&plan)).unwrap();

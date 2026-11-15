@@ -1,7 +1,10 @@
 // Un plan del culto: lo que se va a presentar, en orden (D-019). Tipos puros: sin Tauri.
 use serde::{Deserialize, Serialize};
 
+use std::collections::BTreeMap;
+
 use crate::features::media::domain::MediaKind;
+use crate::features::output::domain::Marks;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -29,7 +32,12 @@ pub enum ItemContent {
     /// Un título que ordena el plan («Alabanza», «Predicación»); no se muestra en pantalla.
     Section { title: String },
     /// Una letra de la biblioteca. Si se borra de la biblioteca, el plan la marca como borrada.
-    Song { song_id: String },
+    Song {
+        song_id: String,
+        /// Palabras resaltadas en esta letra, para este plan (D-023).
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        marks: Marks,
+    },
     /// Imagen, video, PDF o presentación, por su ruta en este equipo.
     Media { path: String, media: MediaKind },
     /// Versículos que el predicador quiere tener a un clic: un capítulo entero o un rango.
@@ -42,6 +50,8 @@ pub enum ItemContent {
         /// Versión fija (id de la Biblia); None = la elegida en la consola al mostrarlo.
         #[serde(default)]
         bible: Option<String>,
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        marks: Marks,
     },
     /// Un tiempo con cuenta atrás en pantalla (receso, conferencia).
     Pause {
@@ -77,14 +87,19 @@ mod tests {
             {"id":"5","kind":"scripture","book":43,"chapter":3,"verseStart":16,"verseEnd":18}
         ]"#;
         let items: Vec<PlanItem> = serde_json::from_str(json).unwrap();
-        assert_eq!(items[1].content, ItemContent::Song { song_id: "abc".into() });
+        assert_eq!(items[1].content, ItemContent::Song { song_id: "abc".into(), marks: Marks::new() });
         assert_eq!(items[2].content.file(), Some("/x/a.mp4"));
         assert_eq!(items[3].content, ItemContent::Pause { title: "Receso".into(), duration_ms: 600_000, background: None });
         assert_eq!(
             items[4].content,
-            ItemContent::Scripture { book: 43, chapter: 3, verse_start: Some(16), verse_end: Some(18), bible: None }
+            ItemContent::Scripture { book: 43, chapter: 3, verse_start: Some(16), verse_end: Some(18), bible: None, marks: Marks::new() }
         );
         let back = serde_json::to_string(&items[1]).unwrap();
         assert_eq!(back, r#"{"id":"2","kind":"song","songId":"abc"}"#);
+
+        // Con marcas (D-023): van y vuelven igual.
+        let marked = r#"{"id":"6","kind":"song","songId":"abc","marks":{"0":[{"w":2,"t":"gracia","style":"color","color":"pink"}]}}"#;
+        let item: PlanItem = serde_json::from_str(marked).unwrap();
+        assert_eq!(serde_json::to_string(&item).unwrap(), marked);
     }
 }

@@ -29,6 +29,7 @@ The code is organized **by feature**, the same way on both sides:
 | Service plans | `plans` | `plans` |
 | Output window | `output` | `output` |
 | Phone remote control and whiteboard | `remote` | `remote` |
+| Highlighted words in verses and lyrics | — (`marks` in `output` and `plans`) | `marks` |
 | OBS streaming | `obs` | `stream` |
 | Settings | `settings` | `settings` |
 | Clock and timer | — | `clock` |

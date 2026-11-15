@@ -24,7 +24,11 @@
   import { layerKey } from "$lib/features/remote/board";
   import { sheetNumber, strokesOf, watchBoard } from "$lib/features/remote/board.svelte";
   import { openPlan } from "$lib/features/plans/plans.svelte";
-  import { contentOf, problem as planProblem, session as planSession, title as planTitle } from "$lib/features/plans/items.svelte";
+  import { contentOf, fromPlan, problem as planProblem, saveMarks, session as planSession, title as planTitle } from "$lib/features/plans/items.svelte";
+  import MarkTools from "$lib/features/marks/MarkTools.svelte";
+  import { markTool } from "$lib/features/marks/tool.svelte";
+  import { applyMark, clearMarks, type MarkPart } from "$lib/features/marks/marks";
+  import { screenKey } from "$lib/features/output/history.svelte";
 
   const MONITOR_POLL_MS = 2000;
   const SETTINGS_ICON = "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z";
@@ -229,6 +233,36 @@
     if (next) send(next);
   }
 
+  /** Palabras resaltadas (D-023): lo preparado y lo que está en pantalla, si son lo mismo, quedan con las mismas
+   *  marcas; y si vienen del plan, se guardan en él. */
+  function marked(next: OutputContent, where: "prepared" | "live") {
+    const other = where === "live" ? prepared : output.content;
+    const same = screenKey(other) !== null && screenKey(other) === screenKey(next) && (next.kind === "text" || next.kind === "scripture");
+    if (where === "live") {
+      // Al momento, sin esperar al backend: dos clics seguidos no se pisan.
+      output.content = next;
+      send(next);
+      if (same) prepared = { ...prepared, marks: next.marks } as OutputContent;
+    } else {
+      prepared = next;
+      if (same) {
+        output.content = { ...output.content, marks: next.marks } as OutputContent;
+        send(output.content);
+      }
+    }
+    saveMarks(next);
+  }
+
+  function markWords(where: "prepared" | "live", part: MarkPart, from: number, to: number, style = markTool.style, color = markTool.color) {
+    const next = applyMark(where === "live" ? output.content : prepared, part, from, to, style, color);
+    if (next) marked(next, where);
+  }
+
+  function clearWords(where: "prepared" | "live") {
+    const next = clearMarks(where === "live" ? output.content : prepared);
+    if (next) marked(next, where);
+  }
+
   function goPrepared(n: number) {
     const next = moveDeck(prepared, n, pdfPages);
     if (next) prepared = next;
@@ -289,6 +323,9 @@
       case "goTo": return goLive(command.n);
       // Una hoja de la pizarra: va directo, como una página (D-021).
       case "showSheet": return sendPrepared({ kind: "board", sheet: command.id });
+      // Resaltar palabras va directo, como dibujar (D-023).
+      case "mark": return markWords("live", command.part, command.from, command.to, command.style, command.color);
+      case "clearMarks": return clearWords("live");
       case "show": {
         // Lo preparado o algo que estuvo en pantalla (la presentación en la página donde quedó). Ya se confirmó en el teléfono.
         const content = findItem(command.key, prepared);
@@ -556,9 +593,10 @@
       </div>
       <div class="card-body stack" role="tabpanel" id="pane-prepared" aria-labelledby="tab-prepared" hidden={stageTab !== "prepared"}>
         <div class="screen preview">
-          <OutputView content={prepared} style={output.style} preview />
+          <OutputView content={prepared} style={output.style} preview marking={markTool.on} onmark={(part, from, to) => markWords("prepared", part, from, to)} />
           <span class="screen-tag">{t("stage.previewTag")}</span>
         </div>
+        <MarkTools content={prepared} saved={fromPlan(prepared)} onclear={() => clearWords("prepared")} />
         {#if prepared.kind === "empty"}
           <p class="muted">{t("prepared.empty")}</p>
         {/if}
@@ -577,9 +615,10 @@
       </div>
       <div class="card-body stack" role="tabpanel" id="pane-live" aria-labelledby="tab-live" hidden={stageTab !== "live"}>
         <div class="screen live">
-          <OutputView content={output.content} style={output.style} preview />
+          <OutputView content={output.content} style={output.style} preview marking={markTool.on} onmark={(part, from, to) => markWords("live", part, from, to)} />
           <span class="screen-tag live">{output.open ? t("live.badge") : t("live.closedBadge")}</span>
         </div>
+        <MarkTools content={output.content} saved={fromPlan(output.content)} onclear={() => clearWords("live")} />
         {#if !output.open}<p class="muted small">{t(selected ? "live.autoOpenHint" : "live.closedHint")}</p>{/if}
 
         {#if livePosition}

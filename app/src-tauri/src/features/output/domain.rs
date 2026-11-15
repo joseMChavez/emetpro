@@ -1,5 +1,40 @@
 // Lo que se muestra en la ventana de salida y con qué estilo. Tipos puros: sin Tauri.
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
+
+/// Palabras resaltadas (D-023), por versículo o diapositiva: «versión|cita» en la Biblia, el número de diapositiva en
+/// las letras. Un BTreeMap para que el JSON salga siempre en el mismo orden.
+pub type Marks = BTreeMap<String, Vec<WordMark>>;
+
+/// Una palabra resaltada: su número en el texto (cada tramo sin espacios, desde 0) y la palabra misma, para no pintar
+/// otra si el texto cambió.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct WordMark {
+    pub w: u32,
+    pub t: String,
+    pub style: MarkStyle,
+    pub color: MarkColor,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MarkStyle {
+    Marker,
+    Underline,
+    Color,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MarkColor {
+    Yellow,
+    Green,
+    Blue,
+    Pink,
+    Orange,
+    Red,
+}
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 // rename_all solo cambia el nombre de las variantes; rename_all_fields, el de sus campos (duration_ms → durationMs).
@@ -19,6 +54,8 @@ pub enum OutputContent {
         /// Imagen o GIF propio de esta letra; tapa el fondo general.
         #[serde(default)]
         background: Option<String>,
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        marks: Marks,
     },
     Image {
         path: String,
@@ -40,6 +77,8 @@ pub enum OutputContent {
         /// Segunda versión, debajo de la primera (por ejemplo, en otro idioma). Como mucho dos.
         #[serde(default)]
         second: Option<SecondVersion>,
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        marks: Marks,
     },
     /// Hora actual; la dibuja la salida con su propio reloj.
     Clock {
@@ -244,6 +283,8 @@ mod tests {
             r#"{"kind":"clock","hour12":true,"seconds":false}"#,
             r#"{"kind":"board","sheet":"h1"}"#,
             r#"{"kind":"text","slides":["a"],"index":0,"credit":"c","background":null}"#,
+            r#"{"kind":"text","slides":["a b"],"index":0,"credit":"","background":null,"marks":{"0":[{"w":1,"t":"b","style":"marker","color":"yellow"}]}}"#,
+            r#"{"kind":"scripture","verses":[{"reference":"Jn 3:16","text":"t","second":null}],"index":0,"version":"V","copyright":"","second":null,"marks":{"V|Jn 3:16":[{"w":0,"t":"t","style":"underline","color":"blue"}]}}"#,
             r#"{"kind":"scripture","verses":[{"reference":"Jn 3:16","text":"t","second":{"reference":"Jn 3:16","text":"t"}}],"index":0,"version":"V","copyright":"","second":{"version":"W","copyright":""}}"#,
         ] {
             let content: OutputContent = serde_json::from_str(json).expect(json);

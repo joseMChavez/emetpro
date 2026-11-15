@@ -42,6 +42,10 @@ export interface ScreenWord {
   h: number;
   /** Texto, referencia o segunda versión: el teléfono los pinta del mismo color que la pantalla. */
   k: "text" | "ref" | "second";
+  /** Número de la palabra en el texto o la segunda versión (no en la referencia), para resaltarla (D-023). */
+  i?: number;
+  /** Su marca, «estilo:color», si está resaltada. */
+  m?: string;
 }
 
 /** Cómo es la pantalla y, si hay texto, dónde quedó cada palabra. Lo mide la ventana de salida. */

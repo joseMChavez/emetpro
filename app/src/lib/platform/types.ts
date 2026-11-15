@@ -1,6 +1,7 @@
 // Tipos compartidos entre la interfaz y el backend. No dependen de Tauri (ver D-010).
 import type { RemoteCommand } from "$lib/features/remote/protocol";
 import type { Board, BoardMessage, BoardOp, ScreenLayout } from "$lib/features/remote/board";
+import type { Marks } from "$lib/features/marks/marks";
 
 export interface MonitorInfo {
   index: number;
@@ -25,6 +26,8 @@ export type OutputContent =
       credit?: string;
       /** Imagen o GIF propio de esta letra; tapa el fondo general. */
       background?: string | null;
+      /** Palabras resaltadas, por número de diapositiva (D-023). */
+      marks?: Marks;
     }
   | { kind: "image"; path: string }
   | { kind: "video"; path: string; paused: boolean }
@@ -37,6 +40,8 @@ export type OutputContent =
       copyright: string;
       /** Segunda versión, debajo de la primera. Como mucho dos. */
       second?: { version: string; copyright: string } | null;
+      /** Palabras resaltadas, por «versión|cita» (D-023). */
+      marks?: Marks;
     }
   | { kind: "clock"; hour12: boolean; seconds: boolean }
   /** En marcha si endsAt (ms desde 1970) tiene valor; en pausa, remainingMs guarda lo que queda. */
@@ -263,7 +268,7 @@ export interface Plan {
 
 export type PlanItem = { id: string } & (
   | { kind: "section"; title: string }
-  | { kind: "song"; songId: string }
+  | { kind: "song"; songId: string; marks?: Marks }
   | { kind: "media"; path: string; media: MediaKind }
   | { kind: "pause"; title: string; durationMs: number; background?: string | null }
   | {
@@ -275,6 +280,8 @@ export type PlanItem = { id: string } & (
       verseEnd: number | null;
       /** Versión fija (id de la Biblia); null = la elegida en la consola al mostrarlo. */
       bible?: string | null;
+      /** Palabras resaltadas en esta cita, para este plan (D-023). */
+      marks?: Marks;
     }
 );
 
