@@ -14,14 +14,14 @@ The installers are built on GitHub Actions (`.github/workflows/instaladores.yml`
 2. Once it is merged, tag the merge commit with the form `vX.Y.Z` and push the tag:
    ```sh
    git switch main && git pull
-   git tag v0.10.0
-   git push origin v0.10.0
+   git tag v0.10.1
+   git push origin v0.10.1
    ```
-   The installers take their version from the tag (`v0.10.0` → `0.10.0`), so a mismatch only affects local builds — but tag the commit that has the bumped version (see `v0.3.1` below).
+   The installers take their version from the tag (`v0.10.1` → `0.10.1`), so a mismatch only affects local builds — but tag the commit that has the bumped version (see `v0.3.1` below).
 3. Actions builds the three systems (about 15–25 minutes) and leaves a **draft** on Releases. A tag that isn't `vX.Y.Z` fails right away.
 4. Review the draft, test at least one installer and press **Publish release**.
 
-A tag builds the code of the commit it points to. If a release fails and something needs fixing, push the next tag (`v0.10.1`) from the fixed `main`.
+A tag builds the code of the commit it points to. If a release fails and something needs fixing, push the next tag (`v0.10.2`) from the fixed `main`.
 
 ## Building without publishing
 
@@ -80,3 +80,4 @@ Up to `v0.8.2` the app was called **Selah**.
 | `v0.8.2` | Pending | Remote control: returning to a verse shown in another version switches the console and the phone to that version and opens that chapter on the phone; the verse list is folded around the verse on screen ("Whole chapter"), and the version is chosen with buttons. Console: "Preview" and "On screen" in tabs (the right one opens when preparing or sending), the arrow keys move the visible tab, and the menu fits short or narrow windows. |
 | `v0.9.0` | Pending | **Selah is renamed EmetPro** (D-022), with a new icon. On first launch it copies the Selah data (database, Bibles, backgrounds, plan media, LibreOffice copy, remote-control key) into its own folder and fixes the stored paths; the Selah folder is kept as a backup. Lyrics are exported as `.emetpro`; `.selah` files still import. OBS scenes and sources "Selah · …" are renamed "EmetPro · …". Paired phones keep working without scanning again. README and release notes in English. |
 | `v0.10.0` | Pending | **Highlight words** (D-023): marker, underline or text color on words of a verse or lyric, from the console or the phone (a new whiteboard tool, with large text on phones); saved in the plan. The phone page reloads itself when EmetPro was updated. **Video in the console:** "En pantalla" shows the video playing in step with the screen, with pause, mute and volume; "Vista previa" plays it muted. **Animations** (D-024): transitions, text entrances (line, word, typewriter) and effects (breathe, float, glow); video backgrounds and slow-moving images; set in general, per plan, per section and per lyric. Database migration 3 (adds columns: older versions still open it). |
+| `v0.10.1` | Pending | Console: the slide thumbnails under "En pantalla" no longer shrink behind the arrow-keys hint in a short window. **Videos the computer can't play** (D-025), such as HEVC from an iPhone: the console offers "Convertir a MP4", made with `avconvert` (built into macOS) or `ffmpeg`; the copy is kept in the app's cache and the original is not changed. |
