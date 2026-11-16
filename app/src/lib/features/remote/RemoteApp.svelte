@@ -503,6 +503,8 @@
       {/if}
     </section>
 
+    <!-- En una tablet apaisada esto va a la derecha y «En pantalla» a la izquierda; en vertical, debajo. -->
+    <div class="side">
     {#if status?.plan && status.plan.items.length > 0}
       <section class="card">
         <h2>{t("remote.plan", { name: status.plan.name })}</h2>
@@ -609,6 +611,7 @@
         {/if}
       {/if}
     </section>
+    </div>
 
     <!-- A mano del pulgar: siempre visible abajo. -->
     <nav class="controls">
@@ -661,9 +664,8 @@
 {/if}
 
 <style>
+  /* Todo el ancho, también en una tablet: antes una columna de 640 px dejaba franjas vacías a los lados. */
   .remote {
-    max-width: 640px;
-    margin: 0 auto;
     padding: 12px 16px calc(190px + env(safe-area-inset-bottom));
     display: flex;
     flex-direction: column;
@@ -691,6 +693,7 @@
   .conn.ok .dot { background: var(--ok); }
   .notice { padding: 10px 12px; border-radius: 8px; background: var(--warn-bg); color: var(--warn-text); }
   .card { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
   h2 { font-size: 15px; margin: 0; }
   .live-head { display: flex; align-items: center; gap: 8px; }
   .live-head h2 { flex: 1; }
@@ -767,6 +770,33 @@
   .now .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--live); }
   .backdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 16px; background: rgb(0 0 0 / 50%); }
   .confirm { width: min(460px, 100%); max-height: 80vh; overflow: auto; }
+
+  /* Tablet en vertical: una columna a todo el ancho, con la pantalla más grande. */
+  @media (min-width: 700px) {
+    .remote { padding-left: 24px; padding-right: 24px; }
+    .remote .screen { max-height: 42vh; }
+    .controls { padding-left: 24px; padding-right: 24px; }
+  }
+
+  /* Tablet apaisada o pantalla ancha: «En pantalla» a la izquierda, fija mientras se recorre el resto. */
+  @media (min-width: 900px) and (orientation: landscape) {
+    .remote {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+      align-items: start;
+      column-gap: 16px;
+    }
+    .remote > header, .remote > .notice { grid-column: 1 / -1; }
+    .live {
+      grid-column: 1;
+      position: sticky;
+      top: calc(12px + env(safe-area-inset-top));
+      max-height: calc(100dvh - 210px - env(safe-area-inset-bottom));
+      overflow-y: auto;
+    }
+    .side { grid-column: 2; }
+    .remote .screen { max-height: calc(100dvh - 400px); min-height: 180px; }
+  }
   /* Espejo de la pantalla: 16:9 desde el principio para que nada salte mientras llega la imagen. */
   .screen {
     position: relative;
