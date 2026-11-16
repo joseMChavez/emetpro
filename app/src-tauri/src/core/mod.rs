@@ -5,4 +5,5 @@ pub mod error;
 pub mod events;
 pub mod legacy;
 pub mod log;
+pub mod media_server;
 pub mod picker;

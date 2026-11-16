@@ -19,6 +19,7 @@ src/
     error.rs             CommandError: los errores que recibe la interfaz, como código + datos
     events.rs            nombres de ventanas y de eventos
     assets.rs            allow_media: qué archivos puede cargar la ventana de salida
+    media_server.rs      servidor HTTP en 127.0.0.1 para los videos (D-026)
     picker.rs            selector de archivos del sistema
     log.rs               comando log_client_error (errores de la interfaz al registro)
   features/

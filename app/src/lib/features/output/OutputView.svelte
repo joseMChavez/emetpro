@@ -83,7 +83,7 @@
   import { sheetPaper } from "$lib/features/remote/board.svelte";
   import { currentMarks, MARK_HEX, segments, words as wordsOf, type MarkPart, type WordMark } from "$lib/features/marks/marks";
   import { animationOf, isVideo, NO_ANIMATION } from "$lib/features/output/animation";
-  import { playablePath } from "$lib/features/output/playable.svelte";
+  import { fallBackToAsset, isConverted, playableUrl } from "$lib/features/output/playable.svelte";
   import { cubicOut } from "svelte/easing";
 
   let {
@@ -167,8 +167,7 @@
 
   let src = $derived.by(() => {
     if (!("path" in content)) return "";
-    const path = content.kind === "video" ? playablePath(content.path) : content.path;
-    return path ? platform.mediaUrl(path) : "";
+    return content.kind === "video" ? playableUrl(content.path) : platform.mediaUrl(content.path);
   });
   let name = $derived(("path" in content ? content.path.split(/[\\/]/).pop() : "") ?? "");
 
@@ -227,8 +226,7 @@
     if (!lyric && !clock && content.kind !== "empty") return null;
     return ((content.kind === "text" || content.kind === "timer") && content.background) || style.backgroundImage || null;
   });
-  let backdropFile = $derived(backdropPath ? playablePath(backdropPath) : null);
-  let backdrop = $derived(backdropFile ? platform.mediaUrl(backdropFile) : null);
+  let backdrop = $derived(backdropPath ? playableUrl(backdropPath) || null : null);
   /** Un fondo de video va en bucle y sin sonido; en las miniaturas se ve su primer cuadro. */
   let backdropVideo = $derived(backdropPath !== null && isVideo(backdropPath));
 
@@ -281,17 +279,22 @@
     return anim.transition === "none" ? { duration: 0 } : { duration: 280, css: (t: number) => `opacity: ${t}` };
   }
 
-  function videoError() {
+  async function videoError() {
     // 4 = MEDIA_ERR_SRC_NOT_SUPPORTED: suele indicar que falta el códec en el sistema.
     const code = video?.error?.code;
+    if (content.kind !== "video") return;
+    const path = content.path;
+    const file = name;
+    // Si no se llegó al servidor local, se reintenta por el protocolo asset sin avisar.
+    if (await fallBackToAsset(path)) return;
     const hint = code === 4 ? ` ${t("error.codec")}` : "";
-    onerror?.(t("error.video", { name }) + hint);
-    if (content.kind === "video") unplayable(content.path, code);
+    onerror?.(t("error.video", { name: file }) + hint);
+    unplayable(path, code);
   }
 
   /** 3 = no se pudo decodificar, 4 = formato o códec no soportado. Si ya es la copia convertida, no hay más que ofrecer. */
   function unplayable(path: string, code: number | undefined) {
-    if ((code === 3 || code === 4) && playablePath(path) === path) onunplayable?.(path);
+    if ((code === 3 || code === 4) && !isConverted(path)) onunplayable?.(path);
   }
 
   /** Siguiendo la pantalla: la posición del video allí, contando lo que pasó desde el aviso. */
@@ -309,9 +312,28 @@
     if (content.paused) {
       video.pause();
     } else {
-      video.play().catch((e) => onerror?.(t("error.videoStart", { error: String(e) })));
+      start(video, 0);
     }
   });
+
+  /**
+   * Reproduce con sonido. Al mandar a pantalla, la ventana de salida se está abriendo y WebKit puede negar el
+   * sonido a una página que aún no ve (NotAllowedError): se reintenta unos segundos antes de avisar.
+   */
+  function start(element: HTMLVideoElement, attempt: number) {
+    element.play().catch((e) => {
+      const stillWanted = element === video && content.kind === "video" && !content.paused;
+      if (!stillWanted) return;
+      if (e instanceof DOMException && e.name === "NotAllowedError" && attempt < 10) {
+        setTimeout(() => {
+          if (element === video && element.paused && content.kind === "video" && !content.paused) start(element, attempt + 1);
+        }, 300);
+        return;
+      }
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      onerror?.(t("error.videoStart", { error: String(e) }));
+    });
+  }
 
   // Más de un segundo de diferencia con la pantalla: salta a donde va allí.
   $effect(() => {
@@ -428,7 +450,11 @@
         playsinline
         autoplay={animated}
         preload={animated ? "auto" : "metadata"}
-        onerror={(e) => backdropPath && unplayable(backdropPath, (e.currentTarget as HTMLVideoElement).error?.code)}
+        onerror={async (e) => {
+          const path = backdropPath;
+          const code = (e.currentTarget as HTMLVideoElement).error?.code;
+          if (path && !(await fallBackToAsset(path))) unplayable(path, code);
+        }}
       ></video>
     {:else}
       <img class="backdrop" class:drift={anim.background === "slow"} src={backdrop} alt="" />
