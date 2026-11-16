@@ -42,7 +42,7 @@ pub struct Manifest {
     pub backgrounds: Vec<BackgroundEntry>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SongEntry {
     pub id: String,

@@ -77,6 +77,13 @@ export const tauriPlatform: Platform = {
   transferImportApply: (onConflict, planName, importedSuffix) =>
     invoke("plugin:transfer|transfer_import_apply", { onConflict, planName, importedSuffix }),
   transferImportCancel: () => invoke("plugin:transfer|transfer_import_cancel"),
+  planExportInfo: (planId, sectionId) => invoke("plugin:transfer|plan_export_info", { planId, sectionId }),
+  planExport: (title, filterName, fileName, planId, sectionId, includeVideos, bibles) =>
+    invoke("plugin:transfer|plan_export", { title, filterName, fileName, planId, sectionId, includeVideos, bibles }),
+  planImportPick: (title, filterName) => invoke("plugin:transfer|plan_import_pick", { title, filterName }),
+  planImportApply: (onConflict, importedSuffix, newName, appendTo) =>
+    invoke("plugin:transfer|plan_import_apply", { onConflict, importedSuffix, newName, appendTo }),
+  planImportCancel: () => invoke("plugin:transfer|plan_import_cancel"),
   transferExport: (title, filterName, fileName, planId) =>
     invoke("plugin:transfer|transfer_export", { title, filterName, fileName, planId }),
   obsDetect: () => invoke("plugin:obs|obs_detect"),

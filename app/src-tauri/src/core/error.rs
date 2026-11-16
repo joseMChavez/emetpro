@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 // Los errores viajan como códigos para que la interfaz los muestre en el idioma elegido.
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(tag = "code", rename_all = "camelCase")]
 pub enum CommandError {
     MonitorDisconnected,

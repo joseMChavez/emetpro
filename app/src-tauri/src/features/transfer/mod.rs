@@ -8,6 +8,7 @@ mod commands;
 pub mod domain;
 pub mod formats;
 mod repo;
+mod plan_transfer;
 
 use std::sync::Mutex;
 
@@ -26,9 +27,15 @@ pub fn plugin() -> TauriPlugin<Wry> {
             commands::transfer_import_apply,
             commands::transfer_import_cancel,
             commands::transfer_export,
+            commands::plan_export_info,
+            commands::plan_export,
+            commands::plan_import_pick,
+            commands::plan_import_apply,
+            commands::plan_import_cancel,
         ])
         .setup(|app, _api| {
             app.manage(TransferState::default());
+            app.manage(PlanImportState::default());
             Ok(())
         })
         .build()
@@ -46,3 +53,13 @@ pub struct Pending {
 
 #[derive(Default)]
 pub struct TransferState(pub Mutex<Option<Pending>>);
+
+/// Un plan leído (.emetplan) que espera a que el usuario elija dónde ponerlo (D-028).
+pub struct PendingPlan {
+    pub path: std::path::PathBuf,
+    pub file: String,
+    pub manifest: formats::plan::PlanManifest,
+}
+
+#[derive(Default)]
+pub struct PlanImportState(pub Mutex<Option<PendingPlan>>);

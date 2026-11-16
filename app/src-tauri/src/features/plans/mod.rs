@@ -2,7 +2,7 @@
 // Plugin interno «plans»: la interfaz llama a sus comandos como `plugin:plans|<comando>` (platform/tauri.ts).
 mod commands;
 pub mod domain;
-mod files;
+pub mod files;
 pub mod repo;
 
 use tauri::plugin::{Builder, TauriPlugin};
