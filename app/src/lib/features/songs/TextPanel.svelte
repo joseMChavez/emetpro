@@ -18,6 +18,9 @@
   import { toMessage, type Message } from "$lib/core/messages";
   import { platform, type OutputContent } from "$lib/platform";
   import { splitSlides } from "$lib/features/songs/slides";
+  import RichEditor from "$lib/features/richtext/RichEditor.svelte";
+  import { fromPlain, isEmptySlide, plainSlide, type RichSlide } from "$lib/features/richtext/rich";
+  import { firstLine } from "$lib/features/plans/items.svelte";
 
   let {
     onprepare,
@@ -30,8 +33,10 @@
   type Mode = "library" | "free";
 
   let mode = $state<Mode>("library");
-  let draft = $state(t("text.sample"));
-  let slides = $derived(splitSlides(draft));
+  /** Texto libre con formato (D-027): una entrada por diapositiva. */
+  let freeSlides = $state<RichSlide[]>(splitSlides(t("text.sample")).map(fromPlain));
+  let freeIndex = $state(0);
+  let filled = $derived(freeSlides.filter((s) => !isEmptySlide(s)));
   let filter = $state("");
   /** Letra que se está editando (copia); null = no se edita nada. */
   let editing = $state<Song | null>(null);
@@ -64,9 +69,23 @@
   }
 
   // Escribir solo cambia «Preparado»: la pantalla no se toca hasta pulsar «Enviar a pantalla».
+  // La vista previa va a la diapositiva que se está escribiendo.
   function updateFree() {
     current = null;
-    onprepare(slides.length > 0 ? { kind: "text", slides, index: 0 } : { kind: "empty" });
+    if (filled.length === 0) return onprepare({ kind: "empty" });
+    const rich = $state.snapshot(filled) as RichSlide[];
+    const before = freeSlides.slice(0, freeIndex + 1).filter((s) => !isEmptySlide(s)).length;
+    const index = Math.max(0, Math.min(filled.length - 1, before - 1));
+    onprepare({ kind: "text", slides: rich.map(plainSlide), rich, index });
+  }
+
+  function addFreeToPlan() {
+    if (filled.length === 0) return;
+    const slides = $state.snapshot(filled) as RichSlide[];
+    addToOpenPlan({ id: crypto.randomUUID(), kind: "text", title: firstLine(slides), slides });
+    notice = t("plans.addedText", { plan: openPlan.plan?.name ?? "" });
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(() => (notice = null), 3000);
   }
 
   function startNew() {
@@ -247,12 +266,25 @@
       </ul>
     {/if}
   {:else}
-    <label class="label" for="text-draft">{t("text.label")}</label>
-    <textarea id="text-draft" class="field free" bind:value={draft} oninput={updateFree} onfocus={updateFree} rows="12"></textarea>
-    <p class="muted small">
-      {t("text.hint")}
-      {#if slides.length > 1}· {tCount("text.count", slides.length)}{/if}
-    </p>
+    <div class="free-head">
+      <span class="label">{t("text.label")}</span>
+      <span class="muted small">{tCount("text.count", filled.length)}</span>
+      {#if openPlan.plan}
+        <button class="btn small-btn" onclick={addFreeToPlan} disabled={filled.length === 0} title={t("plans.addTextTo", { plan: openPlan.plan.name })}>{t("songs.addToPlan")}</button>
+      {/if}
+    </div>
+    {#if notice}<p class="notice small" role="status">✓ {notice}</p>{/if}
+    <RichEditor
+      slides={freeSlides}
+      onchange={(next) => {
+        freeSlides = next;
+        updateFree();
+      }}
+      onfocusslide={(i) => {
+        freeIndex = i;
+        updateFree();
+      }}
+    />
   {/if}
 </div>
 
@@ -302,6 +334,8 @@
   .name { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; font-weight: 600; }
   .name, .sub { text-overflow: ellipsis; white-space: nowrap; }
   .sub { font-weight: 400; overflow: hidden; }
+  .free-head { display: flex; align-items: center; gap: 8px; }
+  .free-head .label { flex: 1; }
   .small-btn { min-height: 34px; padding: 0 10px; font-size: 13px; }
   .small-btn.on { color: var(--accent); }
   .icon-btn {

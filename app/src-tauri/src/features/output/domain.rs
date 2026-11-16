@@ -36,6 +36,72 @@ pub enum MarkColor {
     Red,
 }
 
+// ---- Texto con formato (D-027) ----
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BlockType {
+    Title,
+    Subtitle,
+    Body,
+    Bullet,
+    Number,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BlockAlign {
+    Left,
+    Center,
+    Right,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TextColor {
+    White,
+    Yellow,
+    Orange,
+    Red,
+    Pink,
+    Violet,
+    Blue,
+    Cyan,
+    Green,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+/// Un tramo de texto con su formato.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RichRun {
+    pub text: String,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub b: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub i: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub u: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<TextColor>,
+}
+
+/// Un párrafo: título, subtítulo, texto o elemento de lista, con su alineación (None = la del estilo).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RichBlock {
+    #[serde(rename = "type")]
+    pub kind: BlockType,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub align: Option<BlockAlign>,
+    #[serde(default)]
+    pub runs: Vec<RichRun>,
+}
+
+/// Una diapositiva con formato.
+pub type RichSlide = Vec<RichBlock>;
+
 #[derive(Clone, Default, Serialize, Deserialize)]
 // rename_all solo cambia el nombre de las variantes; rename_all_fields, el de sus campos (duration_ms → durationMs).
 #[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
@@ -59,6 +125,9 @@ pub enum OutputContent {
         /// Solo si la cascada (plan, sección, letra) cambia lo general (D-024).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         animation: Option<TextAnimation>,
+        /// Con formato (D-027), una por diapositiva; `slides` lleva su texto plano.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rich: Option<Vec<RichSlide>>,
     },
     Image {
         path: String,
@@ -370,6 +439,7 @@ mod tests {
             r#"{"kind":"clock","hour12":true,"seconds":false}"#,
             r#"{"kind":"board","sheet":"h1"}"#,
             r#"{"kind":"text","slides":["a"],"index":0,"credit":"","background":"/x/f.mp4","animation":{"transition":"none","entrance":"lines","ambient":"float","background":"still"}}"#,
+            r#"{"kind":"text","slides":["Título\nUno dos"],"index":0,"credit":"","background":null,"rich":[[{"type":"title","align":"center","runs":[{"text":"Título","b":true,"color":"yellow"}]},{"type":"bullet","runs":[{"text":"Uno ","i":true},{"text":"dos","u":true}]}]]}"#,
             r#"{"kind":"video","path":"/x/a.mp4","paused":false,"volume":0.4,"muted":true}"#,
             r#"{"kind":"text","slides":["a"],"index":0,"credit":"c","background":null}"#,
             r#"{"kind":"text","slides":["a b"],"index":0,"credit":"","background":null,"marks":{"0":[{"w":1,"t":"b","style":"marker","color":"yellow"}]}}"#,

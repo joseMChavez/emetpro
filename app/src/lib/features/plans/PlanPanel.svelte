@@ -9,7 +9,9 @@
   import { bibles, currentBibles, visibleBibles } from "$lib/features/bible/bibles.svelte";
   import { bookLanguage } from "$lib/features/bible/scripture";
   import { parseList, referenceLabel, scriptureContent, type ScriptureItem } from "./scripture";
-  import { baseName, contentOf, detail, icon, markShown, problem, session, title } from "./items.svelte";
+  import { baseName, contentOf, detail, firstLine, icon, markShown, problem, session, textSlides, title } from "./items.svelte";
+  import RichEditor from "$lib/features/richtext/RichEditor.svelte";
+  import { plainSlide, type RichSlide } from "$lib/features/richtext/rich";
   import { platform, type MediaFile, type OutputContent } from "$lib/platform";
   import {
     choosePlan,
@@ -41,6 +43,7 @@
   const MAX_MINUTES = 600;
 
   type Pause = Extract<PlanItem, { kind: "pause" }>;
+  type TextItem = Extract<PlanItem, { kind: "text" }>;
 
   let plan = $derived(openPlan.plan);
   let confirmDelete = $state<string | null>(null);
@@ -57,6 +60,10 @@
   let scriptureReady = $derived(scriptureLines.filter((l) => l.reference !== null).length);
   /** Pausa en el formulario: nueva (sin id en el plan) o una que se edita. */
   let pauseDraft = $state<{ id: string; title: string; minutes: number; seconds: number; background: string | null; isNew: boolean } | null>(null);
+  /** Texto con formato en el formulario (D-027): nuevo o uno que se edita. */
+  let textDraft = $state<{ id: string; title: string; slides: RichSlide[]; marks?: TextItem["marks"]; isNew: boolean } | null>(null);
+  /** Diapositiva del texto que se está escribiendo, para la vista previa. */
+  let textIndex = $state(0);
   /** Sección cuyo título se está escribiendo. */
   let editingSection = $state<string | null>(null);
 
@@ -231,9 +238,11 @@
   function newPause(minutes: number) {
     pauseDraft = { id: crypto.randomUUID(), title: t("plans.pauseDefault"), minutes, seconds: 0, background: null, isNew: true };
     adding = null;
+    textDraft = null;
   }
 
   function editPause(item: Pause) {
+    textDraft = null;
     const total = Math.round(item.durationMs / 1000);
     pauseDraft = {
       id: item.id,
@@ -279,6 +288,42 @@
     }
   }
 
+  function newText() {
+    textDraft = { id: crypto.randomUUID(), title: "", slides: [[]], isNew: true };
+    textIndex = 0;
+    adding = null;
+    pauseDraft = null;
+  }
+
+  function editText(item: TextItem) {
+    textDraft = { id: item.id, title: item.title, slides: $state.snapshot(item.slides) as RichSlide[], marks: item.marks, isNew: false };
+    textIndex = 0;
+    adding = null;
+    pauseDraft = null;
+  }
+
+  /** Mientras se escribe, «Preparado» muestra la diapositiva en la que se está. */
+  function previewText() {
+    if (!textDraft) return;
+    const slides = textSlides($state.snapshot(textDraft.slides) as RichSlide[]);
+    if (slides.length === 0) return onprepare({ kind: "empty" });
+    const before = textSlides(textDraft.slides.slice(0, textIndex + 1)).length;
+    onprepare({ kind: "text", slides: slides.map(plainSlide), rich: slides, index: Math.max(0, Math.min(slides.length - 1, before - 1)) });
+  }
+
+  function saveText() {
+    if (!plan || !textDraft) return;
+    const slides = textSlides($state.snapshot(textDraft.slides) as RichSlide[]);
+    if (slides.length === 0) return;
+    const item: PlanItem = { id: textDraft.id, kind: "text", title: textDraft.title.trim(), slides };
+    // Las marcas se guardan por número de diapositiva: si el texto cambió, las de palabras que ya no están no se pintan.
+    if (textDraft.marks) item.marks = textDraft.marks;
+    const exists = plan.items.some((i) => i.id === item.id);
+    setItems(exists ? plan.items.map((i) => (i.id === item.id ? item : i)) : [...plan.items, item]);
+    if (!exists) notify(t("plans.addedText", { plan: plan.name }));
+    textDraft = null;
+  }
+
   // --- Lista de planes ---
 
   function newPlan() {
@@ -291,6 +336,7 @@
     session.current = null;
     adding = null;
     pauseDraft = null;
+    textDraft = null;
     confirmDelete = null;
   }
 
@@ -452,6 +498,8 @@
               </button>
               {#if item.kind === "pause"}
                 <button class="icon-btn" onclick={() => editPause(item)} aria-label={t("plans.editPause")} title={t("plans.editPause")}>✎</button>
+              {:else if item.kind === "text"}
+                <button class="icon-btn" onclick={() => editText(item)} aria-label={t("plans.editText")} title={t("plans.editText")}>✎</button>
               {/if}
               <button class="icon-btn" onclick={() => move(i, -1)} disabled={i === 0} aria-label={t("songs.moveUp")}>▲</button>
               <button class="icon-btn" onclick={() => move(i, 1)} disabled={i === plan.items.length - 1} aria-label={t("songs.moveDown")}>▼</button>
@@ -464,7 +512,32 @@
 
     {#if notice}<p class="notice small" role="status">✓ {notice}</p>{/if}
 
-    {#if pauseDraft}
+    {#if textDraft}
+      <form class="box" onsubmit={(e) => { e.preventDefault(); saveText(); }}>
+        <strong>{t(textDraft.isNew ? "plans.addText" : "plans.editText")}</strong>
+        <label class="field-row">
+          <span class="label">{t("plans.textTitle")}</span>
+          <input class="field" bind:value={textDraft.title} maxlength="80" placeholder={firstLine(textDraft.slides) || t("plans.textTitlePlaceholder")} />
+        </label>
+        {#key textDraft.id}
+          <RichEditor
+            slides={textDraft.slides}
+            onchange={(next) => {
+              if (textDraft) textDraft.slides = next;
+              previewText();
+            }}
+            onfocusslide={(i) => {
+              textIndex = i;
+              previewText();
+            }}
+          />
+        {/key}
+        <div class="row end">
+          <button type="button" class="btn ghost" onclick={() => (textDraft = null)}>{t("songs.cancel")}</button>
+          <button type="submit" class="btn primary" disabled={textSlides(textDraft.slides).length === 0}>{t(textDraft.isNew ? "plans.add" : "songs.save")}</button>
+        </div>
+      </form>
+    {:else if pauseDraft}
       <form class="box" onsubmit={(e) => { e.preventDefault(); savePause(); }}>
         <strong>{t(pauseDraft.isNew ? "plans.addPause" : "plans.editPause")}</strong>
         <label class="field-row">
@@ -564,6 +637,7 @@
         <button class="btn" onclick={addSection}>+ {t("plans.section")}</button>
         <button class="btn" onclick={() => { adding = "song"; songFilter = ""; }}>+ {t("plans.song")}</button>
         <button class="btn" onclick={() => (adding = "scripture")}>+ {t("plans.verses")}</button>
+        <button class="btn" onclick={newText}>+ {t("plans.text")}</button>
         <button class="btn" onclick={addMedia} disabled={copying}>{copying ? t("plans.copying") : `+ ${t("plans.media")}`}</button>
         <div class="pause-add">
           <button class="btn" onclick={() => newPause(10)}>+ {t("plans.pause")}</button>
