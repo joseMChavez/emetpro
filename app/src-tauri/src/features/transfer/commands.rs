@@ -9,6 +9,7 @@ use super::formats::emetpro::{self, Background, Manifest, SongEntry, EXTENSION};
 use super::formats::holyrics;
 use super::formats::plan::{self as plan_file, BibleRef, PlanManifest};
 use super::plan_transfer;
+use crate::features::media::domain::media_kind;
 use super::{Pending, PendingPlan, PlanImportState, TransferState};
 use crate::core::assets::allow_media;
 use crate::core::db::{now_secs, with_store, Db};
@@ -415,7 +416,7 @@ fn build_export(
     let mut songs = Vec::new();
     for id in &packed.songs {
         let Some(song) = library.iter().find(|s| &s.id == id) else { continue };
-        let background = song.background.as_ref().filter(|p| Path::new(p).is_file()).map(|p| {
+        let background = song.background.as_ref().filter(|p| Path::new(p).is_file() && media_kind(Path::new(p)).is_some()).map(|p| {
             let name = Path::new(p).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
             packed.files.push((name, PathBuf::from(p)));
             packed.files.len() - 1
