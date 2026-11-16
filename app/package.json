@@ -1,6 +1,6 @@
 {
   "name": "emetpro",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "description": "EmetPro: projection and live streaming for churches",
   "type": "module",
   "scripts": {
