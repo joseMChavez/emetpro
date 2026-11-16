@@ -2,6 +2,7 @@
 import type { RemoteCommand } from "$lib/features/remote/protocol";
 import type { Board, BoardMessage, BoardOp, ScreenLayout } from "$lib/features/remote/board";
 import type { Marks } from "$lib/features/marks/marks";
+import type { RichSlide } from "$lib/features/richtext/rich";
 
 export interface MonitorInfo {
   index: number;
@@ -30,6 +31,8 @@ export type OutputContent =
       marks?: Marks;
       /** Solo si la cascada (plan, sección, letra) cambia lo general (D-024). */
       animation?: TextAnimation;
+      /** Con formato (D-027): una por diapositiva. `slides` lleva su texto plano, que manda para marcas y teléfono. */
+      rich?: RichSlide[];
     }
   | { kind: "image"; path: string }
   | {
@@ -298,6 +301,8 @@ export type PlanItem = { id: string } & (
   | { kind: "song"; songId: string; marks?: Marks }
   | { kind: "media"; path: string; media: MediaKind }
   | { kind: "pause"; title: string; durationMs: number; background?: string | null }
+  /** Texto con formato escrito en el plan (D-027): un sermón, avisos. */
+  | { kind: "text"; title: string; slides: RichSlide[]; marks?: Marks }
   | {
       kind: "scripture";
       book: number;

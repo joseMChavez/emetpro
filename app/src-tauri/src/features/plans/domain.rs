@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use crate::features::media::domain::MediaKind;
-use crate::features::output::domain::Marks;
+use crate::features::output::domain::{Marks, RichSlide};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -61,6 +61,14 @@ pub enum ItemContent {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         marks: Marks,
     },
+    /// Texto con formato escrito en el plan (D-027): un sermón, avisos.
+    Text {
+        #[serde(default)]
+        title: String,
+        slides: Vec<RichSlide>,
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        marks: Marks,
+    },
     /// Un tiempo con cuenta atrás en pantalla (receso, conferencia).
     Pause {
         title: String,
@@ -109,5 +117,11 @@ mod tests {
         let marked = r#"{"id":"6","kind":"song","songId":"abc","marks":{"0":[{"w":2,"t":"gracia","style":"color","color":"pink"}]}}"#;
         let item: PlanItem = serde_json::from_str(marked).unwrap();
         assert_eq!(serde_json::to_string(&item).unwrap(), marked);
+
+        // Texto con formato (D-027): va y vuelve igual.
+        let text = r#"{"id":"7","kind":"text","title":"Sermón","slides":[[{"type":"title","runs":[{"text":"La Reforma","b":true}]},{"type":"body","align":"left","runs":[{"text":"Lutero ","color":"cyan"},{"text":"buscaba paz"}]}]],"marks":{"0":[{"w":0,"t":"La","style":"marker","color":"yellow"}]}}"#;
+        let item: PlanItem = serde_json::from_str(text).unwrap();
+        assert!(matches!(&item.content, ItemContent::Text { slides, .. } if slides[0].len() == 2));
+        assert_eq!(serde_json::to_string(&item).unwrap(), text);
     }
 }

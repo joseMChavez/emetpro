@@ -45,6 +45,8 @@
       const k = p?.classList.contains("reference") ? "ref" : p?.classList.contains("second") ? "second" : "text";
       // Una palabra resaltada (D-023) lleva su marca: el teléfono la pinta igual.
       const m = (node.parentElement?.closest("[data-mark]") as HTMLElement | null)?.dataset.mark;
+      // Una palabra con formato a medias («**Lu**tero») son dos nodos: su número viene en data-w, no se cuenta dos veces.
+      const dw = (node.parentElement?.closest("[data-w]") as HTMLElement | null)?.dataset.w;
       for (const match of (node.textContent ?? "").matchAll(/\S+/gu)) {
         range.setStart(node, match.index);
         range.setEnd(node, match.index + match[0].length);
@@ -60,11 +62,12 @@
           w: scale(rect.width, box.width),
           h: scale(rect.height, box.height),
           k,
-          ...(k === "ref" ? {} : { i: count[k]++ }),
+          ...(k === "ref" ? {} : { i: dw !== undefined ? Number(dw) : count[k]++ }),
           ...(m ? { m } : {}),
         });
         if (words.length >= MAX_WORDS) return words;
       }
+      if (dw !== undefined && k !== "ref") count[k] = Number(dw) + 1;
     }
     return words;
   }
@@ -84,6 +87,7 @@
   import { currentMarks, MARK_HEX, segments, words as wordsOf, type MarkPart, type WordMark } from "$lib/features/marks/marks";
   import { animationOf, isVideo, NO_ANIMATION } from "$lib/features/output/animation";
   import { fallBackToAsset, isConverted, playableUrl } from "$lib/features/output/playable.svelte";
+  import { renderBlocks, TEXT_HEX, type RichSlide } from "$lib/features/richtext/rich";
   import { cubicOut } from "svelte/easing";
 
   let {
@@ -179,6 +183,7 @@
         // La autoría de una letra va solo en la primera diapositiva.
         copyright: content.index === 0 ? (content.credit ?? "") : "",
         marks: currentMarks(content, "text"),
+        rich: content.rich?.[content.index] ?? null,
         second: null,
       };
     }
@@ -190,6 +195,7 @@
         reference: verse ? `${verse.reference} · ${content.version}` : "",
         copyright: [content.copyright, content.second?.copyright].filter(Boolean).join(" · "),
         marks: currentMarks(content, "text"),
+        rich: null,
         second: second && {
           text: second.text,
           reference: `${second.reference} · ${content.second!.version}`,
@@ -378,7 +384,7 @@
   // Ajuste automático: el texto usa el tamaño máximo elegido y se reduce lo justo para caber.
   // Así un versículo largo no se corta y uno corto no queda diminuto.
   $effect(() => {
-    void [lyric?.text, lyric?.reference, lyric?.second?.text, style.fontScale, style.position, style.font, width, height];
+    void [lyric?.text, lyric?.rich, lyric?.reference, lyric?.second?.text, style.fontScale, style.position, style.font, width, height];
     if (!stage || !body || height === 0) return;
     const fits = () => body!.scrollHeight <= stage!.clientHeight + 1 && body!.scrollWidth <= stage!.clientWidth + 1;
     let low = height * 0.022;
@@ -396,7 +402,7 @@
 
   // Después de ajustar el tamaño: dónde quedó cada palabra. Otra vez cuando cargan los tipos de letra.
   $effect(() => {
-    void [lyric?.text, lyric?.reference, lyric?.second?.text, lyric?.marks, lyric?.second?.marks, style.fontScale, style.position, style.align, style.font, width, height];
+    void [lyric?.text, lyric?.rich, lyric?.reference, lyric?.second?.text, lyric?.marks, lyric?.second?.marks, style.fontScale, style.position, style.align, style.font, width, height];
     if (!onscreen) return;
     if (!lyric || !body || !view) {
       onscreen([]);
@@ -414,6 +420,25 @@
     };
   });
 </script>
+
+<!-- Texto con formato (D-027): cada trozo es un span con su palabra, así las marcas, las entradas y el teléfono
+     funcionan igual que en una diapositiva sin formato. -->
+{#snippet richText(slide: RichSlide, marks: Map<number, WordMark>)}<div class="text rich">{#each renderBlocks(slide, marks) as block, bi (bi)}<p
+      class="rb {block.type}"
+      style:text-align={block.align}>{#each block.pieces as p, pi (pi)}<span
+        class="word {p.mark ? `wm ${p.mark.style}` : ''} {p.w === null ? 'gap' : ''}"
+        class:fb={p.b}
+        class:fi={p.i}
+        class:fu={p.u}
+        style:color={p.color && !(p.mark?.style === "color" || p.mark?.style === "marker") ? TEXT_HEX[p.color] : undefined}
+        style:--d={entering && p.w !== null ? `${Math.round(entrance.delays[0][p.w] ?? 0)}ms` : undefined}
+        style:--n={entering && p.w !== null ? [...p.text].length : undefined}
+        style:--c={entering ? `${entrance.charMs}ms` : undefined}
+        class:pending={pending("text", p.w)}
+        data-part={p.w === null ? undefined : "text"}
+        data-w={p.w ?? undefined}
+        data-mark={p.mark ? `${p.mark.style}:${p.mark.color}` : undefined}
+        style:--mc={p.mark ? MARK_HEX[p.mark.color] : undefined}>{p.text}</span>{/each}{#if block.pieces.length === 0}<br />{/if}</p>{/each}</div>{/snippet}
 
 {#snippet marked(text: string, part: MarkPart, marks: Map<number, WordMark>)}{#each segments(text, marks) as seg}{#if seg.mark || ((marking || entering) && seg.w !== null)}<span
         class="word {seg.mark ? `wm ${seg.mark.style}` : ''} {seg.w === null ? 'gap' : ''}"
@@ -481,7 +506,11 @@
         onpointerup={markEnd}
         onpointercancel={() => (drag = null)}
       >
-        <p class="text">{@render marked(lyric.text, "text", lyric.marks)}</p>
+        {#if lyric.rich}
+          {@render richText(lyric.rich, lyric.marks)}
+        {:else}
+          <p class="text">{@render marked(lyric.text, "text", lyric.marks)}</p>
+        {/if}
         {#if lyric.reference}<p class="reference">{lyric.reference}</p>{/if}
         {#if lyric.second}
           <hr class="divider" />
@@ -581,6 +610,20 @@
     white-space: pre-wrap;
     font-weight: 500;
   }
+  /* Texto con formato (D-027): tamaños en em, así el ajuste automático los agranda o achica juntos. */
+  .rich { counter-reset: n; }
+  .rb { margin: 0; }
+  .rb.title { font-size: 1.5em; font-weight: 800; line-height: 1.15; }
+  .rb.subtitle { font-size: 1.2em; font-weight: 700; line-height: 1.2; }
+  .rb.bullet, .rb.number { position: relative; padding-left: 1.2em; text-align: left; }
+  .rb.bullet::before { content: "•"; position: absolute; left: 0.2em; }
+  .rich > :not(.number) { counter-reset: n; }
+  .rb.number { counter-increment: n; }
+  .rb.number::before { content: counter(n) "."; position: absolute; left: 0; font-variant-numeric: tabular-nums; }
+  .rb + .rb.title, .rb + .rb.subtitle { margin-top: 0.15em; }
+  .fb { font-weight: 800; }
+  .fi { font-style: italic; }
+  .fu { text-decoration: underline; text-decoration-thickness: 0.07em; text-underline-offset: 0.14em; }
   .reference {
     margin: 0.55em 0 0;
     font-size: 0.6em;

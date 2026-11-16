@@ -5,6 +5,7 @@ import { formatCountdown, preparedTimer } from "$lib/features/clock/clock";
 import { screenKey } from "$lib/features/output/history.svelte";
 import { library, songContent } from "$lib/features/songs/library.svelte";
 import { splitSlides } from "$lib/features/songs/slides";
+import { isEmptySlide, plainSlide, type RichSlide } from "$lib/features/richtext/rich";
 import { bibles } from "$lib/features/bible/bibles.svelte";
 import { platform, type OutputContent } from "$lib/platform";
 import { withMarks, type Marks } from "$lib/features/marks/marks";
@@ -13,7 +14,7 @@ import { settings } from "$lib/core/settings.svelte";
 import { DEFAULT_ANIMATION, resolveAnimation } from "$lib/features/output/animation";
 import { bibleFor, missingIn, referenceLabel, scriptureContent } from "./scripture";
 
-const ICONS = { song: "♪", image: "🖼", video: "🎬", pdf: "📄", presentation: "📊", pause: "⏱", scripture: "📖" } as const;
+const ICONS = { song: "♪", image: "🖼", video: "🎬", pdf: "📄", presentation: "📊", pause: "⏱", scripture: "📖", text: "📝" } as const;
 
 /** El uso del plan en esta sesión: lo preparado desde él y lo que ya pasó por la pantalla. No se guarda. */
 export const session = $state({
@@ -51,7 +52,22 @@ export function title(item: PlanItem): string {
     case "media": return baseName(item.path);
     case "pause": return item.title || t("plans.pause");
     case "scripture": return referenceLabel(item, bibleFor(item));
+    case "text": return item.title || firstLine(item.slides) || t("plans.text");
   }
+}
+
+/** La primera línea escrita de un texto con formato, para nombrarlo si no tiene título. */
+export function firstLine(slides: RichSlide[]): string {
+  for (const slide of slides) {
+    const line = plainSlide(slide).split("\n").find((l) => l.trim());
+    if (line) return line.trim().slice(0, 80);
+  }
+  return "";
+}
+
+/** Diapositivas de un texto del plan que tienen algo escrito. */
+export function textSlides(slides: RichSlide[]): RichSlide[] {
+  return slides.filter((s) => !isEmptySlide(s));
 }
 
 export function detail(item: PlanItem): string {
@@ -67,6 +83,7 @@ export function detail(item: PlanItem): string {
       const fixed = item.bible && bible.id === item.bible;
       return `${t("plans.verses")} · ${fixed ? bible.abbreviation : t("plans.consoleVersion", { version: bible.abbreviation })}`;
     }
+    case "text": return `${t("plans.text")} · ${tCount("text.count", textSlides(item.slides).length)}`;
     case "pause": {
       const bg = item.background && !missingFiles.has(item.background) ? ` · ${baseName(item.background)}` : "";
       return `${t("plans.pause")} · ${formatCountdown(item.durationMs)}${bg}`;
@@ -77,7 +94,7 @@ export function detail(item: PlanItem): string {
 
 export function icon(item: PlanItem): string {
   if (item.kind === "media") return ICONS[item.media];
-  if (item.kind === "song" || item.kind === "pause" || item.kind === "scripture") return ICONS[item.kind];
+  if (item.kind === "song" || item.kind === "pause" || item.kind === "scripture" || item.kind === "text") return ICONS[item.kind];
   return "";
 }
 
@@ -121,6 +138,11 @@ async function baseContent(item: PlanItem): Promise<OutputContent | null> {
     case "song": {
       const song = songOf(item);
       return song ? withMarks(songContent(song), item.marks) : null;
+    }
+    case "text": {
+      const slides = textSlides(item.slides);
+      if (slides.length === 0) return null;
+      return withMarks({ kind: "text", slides: slides.map(plainSlide), rich: slides, index: 0 }, item.marks);
     }
     case "pause": {
       const background = item.background && !missingFiles.has(item.background) ? item.background : null;
@@ -177,7 +199,7 @@ export function saveMarks(content: OutputContent) {
   const id = session.current!.id;
   const marks = content.marks && Object.keys(content.marks).length > 0 ? ($state.snapshot(content.marks) as Marks) : undefined;
   const items = plan.items.map((item) =>
-    item.id === id && (item.kind === "song" || item.kind === "scripture") ? { ...item, marks } : item,
+    item.id === id && (item.kind === "song" || item.kind === "scripture" || item.kind === "text") ? { ...item, marks } : item,
   );
   savePlan({ ...plan, items });
   session.current = { id, content: withMarks(session.current!.content, marks) };

@@ -92,7 +92,9 @@ pub fn set_output_content(
     };
     let empty_timer = matches!(content, OutputContent::Timer { duration_ms: 0, .. });
     let no_sheet = matches!(&content, OutputContent::Board { sheet } if sheet.is_empty() || sheet.len() > 64);
-    if empty_timer || no_sheet || deck_len.is_some_and(|(len, index)| index >= len) {
+    // Con formato, una diapositiva con formato por cada una de texto.
+    let rich_mismatch = matches!(&content, OutputContent::Text { slides, rich: Some(rich), .. } if rich.len() != slides.len());
+    if empty_timer || no_sheet || rich_mismatch || deck_len.is_some_and(|(len, index)| index >= len) {
         return Err(CommandError::InvalidContent);
     }
     if let Some(path) = content.media_path() {

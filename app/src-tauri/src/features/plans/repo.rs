@@ -24,9 +24,25 @@ pub fn upsert_plan(conn: &Connection, plan: &Plan) -> rusqlite::Result<()> {
 
 fn read_plan(row: &rusqlite::Row) -> rusqlite::Result<Plan> {
     let items: String = row.get(4)?;
-    let items: Vec<PlanItem> = serde_json::from_str(&items)
+    let items = parse_items(&items)
         .map_err(|e| rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e)))?;
     Ok(Plan { id: row.get(0)?, name: row.get(1)?, date: row.get(2)?, notes: row.get(3)?, items, animate: row.get(5)? })
+}
+
+/// Los elementos de un plan. Uno que esta versión no entiende (de una versión más nueva) se salta en vez de impedir
+/// abrir todos los planes; se avisa en el registro.
+fn parse_items(json: &str) -> serde_json::Result<Vec<PlanItem>> {
+    let raw: Vec<serde_json::Value> = serde_json::from_str(json)?;
+    Ok(raw
+        .into_iter()
+        .filter_map(|value| match serde_json::from_value::<PlanItem>(value.clone()) {
+            Ok(item) => Some(item),
+            Err(e) => {
+                eprintln!("[planes] elemento que no se entiende, se salta ({e}): {value}");
+                None
+            }
+        })
+        .collect())
 }
 
 impl Store {
@@ -65,6 +81,13 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn un_elemento_desconocido_no_rompe_el_plan() {
+        let items = parse_items(r#"[{"id":"1","kind":"section","title":"A"},{"id":"2","kind":"holograma","x":1}]"#).unwrap();
+        assert_eq!(items.len(), 1);
+        assert!(parse_items("no es json").is_err());
+    }
     use crate::features::plans::domain::ItemContent;
     use std::path::PathBuf;
 
