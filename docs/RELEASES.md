@@ -14,14 +14,14 @@ The installers are built on GitHub Actions (`.github/workflows/instaladores.yml`
 2. Once it is merged, tag the merge commit with the form `vX.Y.Z` and push the tag:
    ```sh
    git switch main && git pull
-   git tag v0.10.2
-   git push origin v0.10.2
+   git tag v0.10.3
+   git push origin v0.10.3
    ```
-   The installers take their version from the tag (`v0.10.2` → `0.10.2`), so a mismatch only affects local builds — but tag the commit that has the bumped version (see `v0.3.1` below).
+   The installers take their version from the tag (`v0.10.3` → `0.10.3`), so a mismatch only affects local builds — but tag the commit that has the bumped version (see `v0.3.1` below).
 3. Actions builds the three systems (about 15–25 minutes) and leaves a **draft** on Releases. A tag that isn't `vX.Y.Z` fails right away.
 4. Review the draft, test at least one installer and press **Publish release**.
 
-A tag builds the code of the commit it points to. If a release fails and something needs fixing, push the next tag (`v0.10.3`) from the fixed `main`.
+A tag builds the code of the commit it points to. If a release fails and something needs fixing, push the next tag (`v0.10.4`) from the fixed `main`.
 
 ## Building without publishing
 
@@ -82,3 +82,4 @@ Up to `v0.8.2` the app was called **Selah**.
 | `v0.10.0` | Pending | **Highlight words** (D-023): marker, underline or text color on words of a verse or lyric, from the console or the phone (a new whiteboard tool, with large text on phones); saved in the plan. The phone page reloads itself when EmetPro was updated. **Video in the console:** "En pantalla" shows the video playing in step with the screen, with pause, mute and volume; "Vista previa" plays it muted. **Animations** (D-024): transitions, text entrances (line, word, typewriter) and effects (breathe, float, glow); video backgrounds and slow-moving images; set in general, per plan, per section and per lyric. Database migration 3 (adds columns: older versions still open it). |
 | `v0.10.1` | Pending | Console: the slide thumbnails under "En pantalla" no longer shrink behind the arrow-keys hint in a short window. **Videos the computer can't play** (D-025), such as HEVC from an iPhone: the console offers "Convertir a MP4", made with `avconvert` (built into macOS) or `ffmpeg`; the copy is kept in the app's cache and the original is not changed. |
 | `v0.10.2` | Pending | **The app no longer closes with iPhone videos on macOS** (D-026): videos are loaded from a local HTTP server on 127.0.0.1 (random key per launch, only files the user chose) instead of the asset protocol, which could crash when WebKit cancelled range requests (seeking, muting, sending to screen) and read files without a range entirely into memory. HEVC videos now play where the system has the codec, without converting. Playback with sound retries for a few seconds while the output window opens. |
+| `v0.10.3` | Pending | **Formatted text** (D-027): "Texto libre" and a new plan item "Texto" with titles, subtitles, bullets, numbered lists, alignment, bold, italic, underline and projector colors; the size still fits the screen and highlights work on top. **Export and import a plan or a section** (D-028) as an `.emetplan` file with formatted texts, highlighted verses, lyrics, images, PDFs and presentations (videos optional); import as a new plan or at the end of an existing one. Remote control fills large tablets (two columns in landscape). **Plans with a "Texto" item can't be listed by 0.10.2 or earlier:** update every computer that shares plans. From now on an unknown plan item is skipped instead of hiding all plans. |
