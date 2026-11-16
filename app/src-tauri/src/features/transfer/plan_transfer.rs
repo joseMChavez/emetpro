@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::features::media::domain::MediaKind;
+use crate::features::media::domain::{media_kind, MediaKind};
 use crate::features::plans::domain::{ItemContent, PlanItem};
 
 use super::formats::plan::{file_ref, parse_ref};
@@ -34,8 +34,9 @@ fn file_name(path: &str) -> String {
     Path::new(path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| path.to_string())
 }
 
-/// Cambia las rutas por referencias a los archivos que viajan. Un archivo que ya no está o un video que no se
-/// incluye viaja solo con su nombre.
+/// Cambia las rutas por referencias a los archivos que viajan. Un archivo que ya no está, que no es un medio o un
+/// video que no se incluye viaja solo con su nombre: nunca se mete en el archivo algo que no sea imagen, video, PDF
+/// o presentación (un plan importado con una ruta inventada no puede sacar otros archivos del equipo, D-028).
 pub fn pack(items: &[PlanItem], include_videos: bool, exists: impl Fn(&Path) -> bool) -> Packed {
     let mut out = Packed::default();
     let mut index: HashMap<String, usize> = HashMap::new();
@@ -43,7 +44,7 @@ pub fn pack(items: &[PlanItem], include_videos: bool, exists: impl Fn(&Path) -> 
         if let Some(&i) = index.get(path) {
             return file_ref(i);
         }
-        if !exists(Path::new(path)) {
+        if !exists(Path::new(path)) || media_kind(Path::new(path)).is_none() {
             return file_name(path);
         }
         out.files.push((file_name(path), PathBuf::from(path)));
@@ -81,10 +82,11 @@ pub fn unpack(
 ) -> (Vec<PlanItem>, usize) {
     let mut skipped = 0;
     let mut out = Vec::new();
-    let resolve = |path: &mut String| {
-        if let Some(stored) = parse_ref(path).and_then(|i| stored.get(&i)) {
-            *path = stored.clone();
-        }
+    // Solo un «@n» guardado se vuelve una ruta de este equipo. Cualquier otra cosa queda en su nombre: una ruta
+    // escrita en el archivo («/Users/ana/.ssh/id_rsa») no apunta a nada de este equipo.
+    let resolve = |path: &mut String| match parse_ref(path).and_then(|i| stored.get(&i)) {
+        Some(stored) => *path = stored.clone(),
+        None => *path = file_name(path),
     };
     for value in values {
         let Ok(mut item) = serde_json::from_value::<PlanItem>(value.clone()) else {
@@ -159,6 +161,11 @@ mod tests {
         // Un archivo que ya no está viaja solo con su nombre.
         let missing = pack(&items, true, |p| !p.ends_with("anuncio.png"));
         assert_eq!(missing.files.len(), 1);
+        // Algo que no es un medio no viaja nunca, aunque exista.
+        let secret = vec![item("k", ItemContent::Media { path: "/home/ana/.ssh/id_rsa".into(), media: MediaKind::Image })];
+        let packed = pack(&secret, true, |_| true);
+        assert!(packed.files.is_empty());
+        assert!(matches!(&packed.items[0].content, ItemContent::Media { path, .. } if path == "id_rsa"));
     }
 
     #[test]
@@ -180,6 +187,17 @@ mod tests {
         assert!(matches!(&items[1].content, ItemContent::Song { song_id, .. } if song_id == "lib-1"));
         assert!(matches!(&items[3].content, ItemContent::Media { path, .. } if path == "IMG_0001.MOV"));
         assert!(matches!(&items[4].content, ItemContent::Media { path, .. } if path == "/medios/ab/anuncio.png"));
+
+        // Una ruta escrita en el archivo (no «@n») o un «@n» que no se guardó quedan solo con su nombre.
+        let forged = vec![
+            serde_json::json!({"id":"f","kind":"media","path":"/home/ana/.ssh/id_rsa","media":"image"}),
+            serde_json::json!({"id":"g","kind":"pause","title":"R","durationMs":1000,"background":"C:\\Users\\ana\\secreto.png"}),
+            serde_json::json!({"id":"h","kind":"media","path":"@9","media":"image"}),
+        ];
+        let (items, _) = unpack(&forged, &stored, &songs, || "x".into());
+        assert!(matches!(&items[0].content, ItemContent::Media { path, .. } if path == "id_rsa"));
+        assert!(matches!(&items[1].content, ItemContent::Pause { background: Some(p), .. } if !p.contains('/') && p.ends_with("secreto.png")));
+        assert!(matches!(&items[2].content, ItemContent::Media { path, .. } if path == "@9"));
 
         // Sin la letra en la biblioteca, el elemento no entra.
         let (items, skipped) = unpack(&values, &stored, &HashMap::new(), || "x".into());
