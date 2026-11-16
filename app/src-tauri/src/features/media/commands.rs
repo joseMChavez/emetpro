@@ -8,6 +8,8 @@ use super::domain::{
 };
 use super::{scan, video};
 use crate::core::assets::allow_media;
+use crate::core::media_server;
+use serde::Serialize;
 use crate::core::error::{internal, CommandError};
 use crate::core::picker::{self, dialog_extensions};
 
@@ -100,18 +102,29 @@ pub async fn pick_background(
     Ok(Some(path.to_string_lossy().into_owned()))
 }
 
-/// Lo que el webview debe cargar para un video: su copia en MP4 si ya se convirtió (video.rs), si no el original.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayableVideo {
+    /// El archivo a cargar: la copia en MP4 si ya se convirtió (video.rs), si no el original.
+    path: String,
+    /// Por el servidor local (core/media_server.rs); None si no arrancó y hay que usar el protocolo asset.
+    url: Option<String>,
+    converted: bool,
+}
+
+/// Qué cargar para un video y desde dónde.
 #[tauri::command]
-pub fn playable_video(app: AppHandle, path: String) -> String {
+pub fn playable_video(app: AppHandle, path: String) -> PlayableVideo {
     let source = Path::new(&path);
-    if media_kind(source) != Some(MediaKind::Video) {
-        return path;
-    }
-    let Ok(cache) = app.path().app_cache_dir().map(|d| d.join("videos")) else { return path };
-    match video::converted(source, &cache) {
-        Some(copy) if allow_media(&app, &copy).is_ok() => copy.to_string_lossy().into_owned(),
-        _ => path,
-    }
+    let copy = (media_kind(source) == Some(MediaKind::Video))
+        .then(|| app.path().app_cache_dir().ok())
+        .flatten()
+        .and_then(|cache| video::converted(source, &cache.join("videos")))
+        .filter(|copy| allow_media(&app, copy).is_ok())
+        .map(|copy| copy.to_string_lossy().into_owned());
+    let converted = copy.is_some();
+    let path = copy.unwrap_or(path);
+    PlayableVideo { url: media_server::url(&path), path, converted }
 }
 
 /// Convierte a MP4 H.264 un video que este equipo no reproduce. Al terminar avisa a todas las ventanas con

@@ -313,6 +313,14 @@ export type PlanItem = { id: string } & (
 );
 
 /** Por dónde va el video en la pantalla, en segundos. */
+/** Un video listo para cargar: `url` es la del servidor local (null = usar mediaUrl(path)). */
+export interface PlayableVideo {
+  path: string;
+  url: string | null;
+  /** Es la copia en MP4, no el original. */
+  converted: boolean;
+}
+
 export interface VideoTime {
   path: string;
   time: number;
@@ -368,8 +376,8 @@ export interface Platform {
   /** Borra la copia privada (no un LibreOffice del sistema). */
   officeRemove(): Promise<void>;
   onOfficeProgress(handler: (progress: OfficeProgress) => void): Promise<() => void>;
-  /** Lo que se carga para un video: su copia en MP4 si ya se convirtió, si no el mismo archivo. */
-  playableVideo(path: string): Promise<string>;
+  /** Qué cargar para un video (su copia en MP4 si ya se convirtió) y por dónde (el servidor local, si está). */
+  playableVideo(path: string): Promise<PlayableVideo>;
   /** Convierte a MP4 H.264 un video que este equipo no reproduce (HEVC de iPhone…); devuelve la copia. */
   convertVideo(path: string): Promise<string>;
   /** Un video ya tiene copia convertida (llega la ruta del original), desde cualquier ventana. */

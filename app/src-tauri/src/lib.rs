@@ -31,6 +31,7 @@ pub fn run() {
             // La base se abre antes que nada: la interfaz lee sus ajustes al cargar.
             let dir = app.path().app_data_dir()?;
             *app.state::<Db>().0.lock().unwrap() = Some(Store::open(&dir));
+            core::media_server::start(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
