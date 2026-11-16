@@ -274,6 +274,53 @@ export interface ImportPreview {
 
 export type OnConflict = "skip" | "replace" | "keepBoth";
 
+/** Planes en un archivo (.emetplan, D-028). */
+export interface BibleRef {
+  id: string;
+  abbreviation: string;
+  name: string;
+}
+
+export interface PlanExportInfo {
+  items: number;
+  videos: number;
+  videoBytes: number;
+  otherBytes: number;
+}
+
+export interface PlanExportResult {
+  path: string;
+  items: number;
+  files: number;
+  omitted: number;
+}
+
+export interface PlanImportPreview {
+  file: string;
+  name: string;
+  /** Si el archivo es una sección: su título. */
+  section: string | null;
+  date: string | null;
+  app: string;
+  items: number;
+  files: number;
+  bytes: number;
+  /** Medios que vienen sin su archivo (videos que no se incluyeron). */
+  omitted: string[];
+  fresh: ImportSong[];
+  identical: number;
+  conflicts: ImportSong[];
+  bibles: BibleRef[];
+}
+
+export interface PlanImportResult {
+  planId: string;
+  items: number;
+  skipped: number;
+  added: number;
+  replaced: number;
+}
+
 export interface ImportResult {
   added: number;
   replaced: number;
@@ -464,6 +511,21 @@ export interface Platform {
   /** Guarda lo de la última vista previa. Con planName, la lista del archivo se guarda además como un plan. */
   transferImportApply(onConflict: OnConflict, planName: string | null, importedSuffix: string): Promise<ImportResult>;
   transferImportCancel(): Promise<void>;
+  planExportInfo(planId: string, sectionId: string | null): Promise<PlanExportInfo>;
+  /** Guarda el plan (o una sección) en un .emetplan; null si se cancela el diálogo. */
+  planExport(
+    title: string,
+    filterName: string,
+    fileName: string,
+    planId: string,
+    sectionId: string | null,
+    includeVideos: boolean,
+    bibles: BibleRef[],
+  ): Promise<PlanExportResult | null>;
+  planImportPick(title: string, filterName: string): Promise<PlanImportPreview | null>;
+  /** Como plan nuevo (`newName`) o al final de `appendTo`. */
+  planImportApply(onConflict: OnConflict, importedSuffix: string, newName: string | null, appendTo: string | null): Promise<PlanImportResult>;
+  planImportCancel(): Promise<void>;
   /** Guarda la biblioteca (o solo las letras de un plan) en un .emetpro; null si se cancela. */
   transferExport(title: string, filterName: string, fileName: string, planId: string | null): Promise<{ path: string; songs: number } | null>;
 

@@ -11,11 +11,15 @@
   import { parseList, referenceLabel, scriptureContent, type ScriptureItem } from "./scripture";
   import { baseName, contentOf, detail, firstLine, icon, markShown, problem, session, textSlides, title } from "./items.svelte";
   import RichEditor from "$lib/features/richtext/RichEditor.svelte";
+  import PlanExport from "./PlanExport.svelte";
+  import PlanImport from "./PlanImport.svelte";
+  import type { PlanImportPreview } from "$lib/platform";
   import { plainSlide, type RichSlide } from "$lib/features/richtext/rich";
   import { platform, type MediaFile, type OutputContent } from "$lib/platform";
   import {
     choosePlan,
     createPlan,
+    loadPlans,
     deletePlan,
     duplicatePlan,
     missingFiles,
@@ -64,6 +68,10 @@
   let textDraft = $state<{ id: string; title: string; slides: RichSlide[]; marks?: TextItem["marks"]; isNew: boolean } | null>(null);
   /** Diapositiva del texto que se está escribiendo, para la vista previa. */
   let textIndex = $state(0);
+  /** Exportando el plan (sectionId null) o una sección a un .emetplan (D-028). */
+  let exporting = $state<{ sectionId: string | null; label: string; fileName: string } | null>(null);
+  /** Un .emetplan leído, esperando dónde ponerlo. */
+  let importing = $state<PlanImportPreview | null>(null);
   /** Sección cuyo título se está escribiendo. */
   let editingSection = $state<string | null>(null);
 
@@ -324,6 +332,40 @@
     textDraft = null;
   }
 
+  // --- Exportar e importar (D-028) ---
+
+  function exportPlan(sectionId: string | null, sectionTitle?: string) {
+    if (!plan) return;
+    textDraft = null;
+    pauseDraft = null;
+    adding = null;
+    exporting = sectionId
+      ? { sectionId, label: t("planfile.sectionLabel", { section: sectionTitle ?? "" }), fileName: `${plan.name} - ${sectionTitle ?? ""}` }
+      : { sectionId: null, label: t("planfile.planLabel", { plan: plan.name }), fileName: plan.name };
+  }
+
+  async function pickImport() {
+    try {
+      const preview = await platform.planImportPick(t("planfile.openTitle"), t("planfile.filter"));
+      if (!preview) return;
+      exporting = null;
+      textDraft = null;
+      pauseDraft = null;
+      adding = null;
+      importing = preview;
+    } catch (e) {
+      onerror(toMessage(e));
+    }
+  }
+
+  async function imported(planId: string, text: string) {
+    importing = null;
+    await loadPlans();
+    choosePlan(planId);
+    session.current = null;
+    notify(text);
+  }
+
   // --- Lista de planes ---
 
   function newPlan() {
@@ -337,6 +379,8 @@
     adding = null;
     pauseDraft = null;
     textDraft = null;
+    exporting = null;
+    importing = null;
     confirmDelete = null;
   }
 
@@ -373,8 +417,13 @@
   {#if !plan}
     <div class="actions">
       <button class="btn primary" onclick={newPlan}>{t("plans.new")}</button>
+      <button class="btn" onclick={pickImport}>{t("planfile.importButton")}</button>
       <span class="muted small">{t("plans.intro")}</span>
     </div>
+    {#if notice}<p class="notice small" role="status">✓ {notice}</p>{/if}
+    {#if importing}
+      {#key importing}<PlanImport preview={importing} appendDefault={null} onclose={() => (importing = null)} onimported={imported} {onerror} />{/key}
+    {/if}
     {#if plans.all.length === 0}
       <p class="muted">{t("plans.empty")}</p>
     {:else}
@@ -397,6 +446,8 @@
   {:else}
     <div class="head">
       <button class="btn ghost" onclick={() => choosePlan(null)}>← {t("plans.all")}</button>
+      <button class="btn ghost" onclick={() => exportPlan(null)} title={t("planfile.exportHint")}>{t("planfile.exportButton")}</button>
+      <button class="btn ghost" onclick={pickImport} title={t("planfile.importHereHint")}>{t("planfile.importHere")}</button>
       <button class="btn primary next" onclick={prepareNext} disabled={presentable.length === 0}>{t("plans.next")} ▶</button>
     </div>
 
@@ -474,6 +525,7 @@
                 <option value="on">✨ {t("anim.cascade.on")}</option>
                 <option value="off">⏸ {t("anim.cascade.off")}</option>
               </select>
+              <button class="icon-btn" onclick={() => exportPlan(item.id, item.title)} aria-label={t("planfile.exportSection", { section: item.title })} title={t("planfile.exportSection", { section: item.title })}>⤓</button>
               <button class="icon-btn" onclick={() => move(i, -1)} disabled={i === 0} aria-label={t("songs.moveUp")}>▲</button>
               <button class="icon-btn" onclick={() => move(i, 1)} disabled={i === plan.items.length - 1} aria-label={t("songs.moveDown")}>▼</button>
               <button class="icon-btn remove" onclick={() => removeItem(item.id)} aria-label={t("plans.remove", { name: item.title })}>✕</button>
@@ -512,7 +564,20 @@
 
     {#if notice}<p class="notice small" role="status">✓ {notice}</p>{/if}
 
-    {#if textDraft}
+    {#if importing}
+      {#key importing}<PlanImport preview={importing} appendDefault={plan.id} onclose={() => (importing = null)} onimported={imported} {onerror} />{/key}
+    {:else if exporting}
+      {#key exporting}
+        <PlanExport
+          planId={plan.id}
+          sectionId={exporting.sectionId}
+          label={exporting.label}
+          fileName={exporting.fileName}
+          onclose={() => (exporting = null)}
+          {onerror}
+        />
+      {/key}
+    {:else if textDraft}
       <form class="box" onsubmit={(e) => { e.preventDefault(); saveText(); }}>
         <strong>{t(textDraft.isNew ? "plans.addText" : "plans.editText")}</strong>
         <label class="field-row">

@@ -13,12 +13,23 @@ pub const DIR: &str = "medios";
 
 /// Copia `source` a `dir` (si no estaba ya) y devuelve la ruta de la copia.
 pub fn store_copy(dir: &Path, source: &Path) -> io::Result<PathBuf> {
+    let name = source
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "sin nombre de archivo"))?
+        .to_os_string();
+    store_copy_named(dir, source, &name)
+}
+
+/// Como `store_copy`, pero la copia se llama `name` (un archivo sacado de un plan importado, D-028).
+/// Del nombre solo vale la última parte: no puede salir de su carpeta.
+pub fn store_copy_named(dir: &Path, source: &Path, name: &std::ffi::OsStr) -> io::Result<PathBuf> {
+    let name = Path::new(name)
+        .file_name()
+        .filter(|n| !n.is_empty())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "sin nombre de archivo"))?;
     let mut hasher = Sha256::new();
     io::copy(&mut fs::File::open(source)?, &mut hasher)?;
     let hash = format!("{:x}", hasher.finalize());
-    let name = source
-        .file_name()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "sin nombre de archivo"))?;
     let folder = dir.join(&hash[..16]);
     let target = folder.join(name);
     if target.is_file() {
