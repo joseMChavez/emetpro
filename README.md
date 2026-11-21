@@ -62,7 +62,7 @@ Releasing a version: [docs/RELEASES.md](docs/RELEASES.md).
 
 ## Documentation
 
-The project's design notes are written in Spanish for now: [decisions log](docs/DECISIONS.md), [architecture](docs/ARQUITECTURA.md) and [streaming tests](docs/PHASE2-TESTS.md). Code comments are also in Spanish. Issues and pull requests in English are welcome.
+The project's design notes are written in Spanish for now: [decisions log](docs/DECISIONS.md), [pending ideas](docs/PENDIENTES.md), [architecture](docs/ARQUITECTURA.md) and [streaming tests](docs/PHASE2-TESTS.md). Code comments are also in Spanish. Issues and pull requests in English are welcome.
 
 ## License
 
