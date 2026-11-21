@@ -262,7 +262,7 @@ export interface MediaSong {
 
 export type IssueCode =
   | "missingTitle" | "invalidReference" | "missingId" | "duplicateId" | "emptyOrder" | "unknownSection" | "trackWithoutAudio" | "invalidAudio"
-  | "timeOutOfTrack" | "entriesOutOfOrder" | "unknownSlide" | "duplicateCue" | "slidesOutOfOrder" | "slideOutsideEntry"
+  | "timeOutOfTrack" | "entriesOutOfOrder" | "sameEntryStart" | "unknownSlide" | "duplicateCue" | "slidesOutOfOrder" | "slideOutsideEntry"
   | "linesOutOfOrder" | "lineOutsideSlide" | "lineEndBeforeStart" | "linesOverlap" | "wordsOutOfOrder" | "wordOutsideLine"
   | "unusedSection" | "emptySlide" | "untimedEntry" | "untimedSlide" | "extraLineCues" | "extraWordCues";
 

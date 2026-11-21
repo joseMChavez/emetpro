@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MediaSong } from "$lib/platform/types";
 import { emptySong, expand, sectionText, studioContent, withText } from "./song";
-import { clearStart, formatTime, markStart, nextStart, slideAt, slideStarts } from "./timeline";
+import { clearStart, formatTime, markStart, nextStart, slideAt, slideRanges, slideStarts, step } from "./timeline";
 
 function song(): MediaSong {
   return {
@@ -111,5 +111,65 @@ describe("marcar tiempos", () => {
   it("formato de tiempo", () => {
     expect(formatTime(0)).toBe("0:00.0");
     expect(formatTime(83_456)).toBe("1:23.4");
+  });
+});
+
+describe("tramos en la grabación y avance (orden propio)", () => {
+  // Desplegada: 0 intro, 1 estrofa, 2-3 coro, 4-5 coro otra vez. Pista de 100 s.
+  const ranges = (s: MediaSong) => slideRanges(expand(s), s.audio!.durationMs);
+
+  it("cada diapositiva dura hasta el siguiente comienzo en la grabación", () => {
+    expect(ranges(song())).toEqual([
+      { start: 0, end: 8_000, own: true },
+      { start: 8_000, end: 20_000, own: true },
+      { start: 20_000, end: 30_000, own: true },
+      { start: 30_000, end: 60_000, own: true },
+      { start: 60_000, end: 70_000, own: true },
+      { start: 70_000, end: 100_000, own: true },
+    ]);
+  });
+
+  it("una estrofa repetida al final sin tiempo propio usa el de la primera vez", () => {
+    const s = song();
+    s.order.push({ id: "e4", section: "v1" });
+    expect(ranges(s)[6]).toEqual({ start: 8_000, end: 20_000, own: false });
+    // Una sección que nunca suena no tiene tramo.
+    s.sections.push({ id: "puente", kind: "bridge", label: "", slides: [{ id: "p1", lines: ["Puente"] }] });
+    s.order.push({ id: "e5", section: "puente" });
+    expect(ranges(s)[7]).toBeNull();
+  });
+
+  it("dentro de la diapositiva, nada; al terminarla, la siguiente donde sigue la grabación", () => {
+    const s = song();
+    const r = ranges(s);
+    const st = slideStarts(expand(s));
+    expect(step(r, st, 1, 15_000)).toEqual({ kind: "stay" });
+    expect(step(r, st, 1, 20_000)).toEqual({ kind: "show", index: 2 });
+    // La última: al final de la pista no hay siguiente.
+    expect(step(r, st, 5, 100_000)).toEqual({ kind: "stay" });
+  });
+
+  it("orden propio: al terminar una diapositiva, la siguiente del orden salta a donde suena en la grabación", () => {
+    // Pista de 200 s: intro 0, estrofa 8, coro 20/30, coro 60/70, y una intro final a los 90 s.
+    // Orden propio: después del 2.º coro, otra vez la estrofa 1 (sin tiempo propio: usa el de los 8 s) y la intro final.
+    const s = song();
+    s.audio = { ...s.audio!, durationMs: 200_000 };
+    s.order = [...s.order, { id: "otra", section: "v1" }, { id: "fin", section: "intro", timing: { startMs: 90_000, slides: [] } }];
+    const r = slideRanges(expand(s), 200_000);
+    const st = slideStarts(expand(s));
+    // 0 intro, 1 estrofa, 2-3 coro, 4-5 coro, 6 estrofa repetida, 7 intro final.
+    expect(r[5]).toEqual({ start: 70_000, end: 90_000, own: true });
+    expect(r[6]).toEqual({ start: 8_000, end: 20_000, own: false });
+    expect(step(r, st, 5, 90_000)).toEqual({ kind: "show", index: 6, seek: 8_000 });
+    // Sonando la estrofa repetida (los 8-20 s de la grabación) no vuelve a la primera vez.
+    expect(step(r, st, 6, 12_000)).toEqual({ kind: "stay" });
+    // Al terminarla, la intro final, que suena a los 90 s: otro salto.
+    expect(step(r, st, 6, 20_000)).toEqual({ kind: "show", index: 7, seek: 90_000 });
+  });
+
+  it("si se movió la barra a otra parte, la diapositiva que suena allí", () => {
+    const s = song();
+    expect(step(ranges(s), slideStarts(expand(s)), 1, 65_000)).toEqual({ kind: "show", index: 4 });
+    expect(step(ranges(s), slideStarts(expand(s)), 4, 2_000)).toEqual({ kind: "show", index: 0 });
   });
 });

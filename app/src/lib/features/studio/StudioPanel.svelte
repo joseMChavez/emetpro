@@ -96,6 +96,9 @@
               </span>
               <!-- Con texto, no solo color: se distingue sin ver colores. -->
               <span class="badge" class:track={song.mode === "track"}>{t(song.mode === "track" ? "studio.badge.track" : "studio.badge.live")}</span>
+              {#if song.mode === "track" && !song.order.some((e) => e.timing)}
+                <span class="badge warn">{t("studio.badge.unsynced")}</span>
+              {/if}
             </button>
             <button class="btn ghost small-btn" onclick={() => startEdit(song)}>{t("studio.edit")}</button>
             <button class="icon-btn remove" class:confirm={confirmDelete === song.id} onclick={() => remove(song.id)} aria-label={t("studio.delete", { title: song.title })} title={t("studio.delete", { title: song.title })}>
@@ -121,6 +124,7 @@
   .sub { font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .badge { flex: none; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
   .badge.track { color: var(--accent); border-color: var(--accent); }
+  .badge.warn { color: var(--warn-text); background: var(--warn-bg); border-color: transparent; }
   .small-btn { min-height: 34px; padding: 0 10px; font-size: 13px; }
   .icon-btn { flex: none; min-width: 36px; min-height: 36px; font: inherit; font-size: 13px; color: var(--muted); background: transparent; border: 0; border-radius: 8px; cursor: pointer; }
   .icon-btn.remove:hover, .icon-btn.confirm { color: var(--live); background: var(--live-soft); }

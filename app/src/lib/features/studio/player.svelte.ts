@@ -29,6 +29,7 @@ class Player {
   private startedAt = 0;
   private loading = 0;
   private frame = 0;
+  private pulses = 0;
   private listeners = new Set<Listener>();
 
   /** Carga la pista (si no era la cargada). Devuelve su duración en ms, o null si falló o la reemplazó otra. */
@@ -88,6 +89,7 @@ class Player {
     this.startSource(this.offset);
     this.playing = true;
     this.tick();
+    this.pulse(++this.pulses);
   }
 
   pause() {
@@ -130,6 +132,31 @@ class Player {
     this.emit();
     this.frame = requestAnimationFrame(this.tick);
   };
+
+  /**
+   * Un aviso cada 100 ms de pista que da el propio audio: un nodo silencioso que termina y se vuelve a programar.
+   * requestAnimationFrame se detiene si la ventana de la consola queda tapada (la salida a pantalla completa en el
+   * mismo monitor) o minimizada; el audio no, así el avance automático sigue.
+   */
+  private pulse(chain: number) {
+    const ctx = this.ctx;
+    // Solo una cadena a la vez: pausar y reanudar enseguida no deja la anterior viva.
+    if (!ctx || !this.playing || chain !== this.pulses) return;
+    const node = ctx.createConstantSource();
+    const silent = ctx.createGain();
+    silent.gain.value = 0;
+    node.connect(silent).connect(ctx.destination);
+    node.onended = () => {
+      node.disconnect();
+      silent.disconnect();
+      if (!this.playing || chain !== this.pulses) return;
+      this.positionMs = this.now();
+      this.emit();
+      this.pulse(chain);
+    };
+    node.start();
+    node.stop(ctx.currentTime + 0.1);
+  }
 
   /** Empieza un trozo nuevo en ese segundo, con fundido de entrada; el anterior se apaga con fundido de salida. */
   private startSource(offset: number) {

@@ -39,6 +39,65 @@ export function nextStart(starts: (number | null)[], ms: number): number | null 
   return next;
 }
 
+/** Dónde suena una diapositiva en la grabación: [start, end). `own` = sus propios tiempos (no los de otra vez). */
+export interface Range {
+  start: number;
+  end: number;
+  own: boolean;
+}
+
+/**
+ * El tramo de la grabación de cada diapositiva desplegada. Cada una dura hasta el siguiente comienzo *en la
+ * grabación*. Una sin tiempo propio usa el de la misma diapositiva en otra aparición de su sección (la más cercana
+ * antes; si no, la primera después): así un coro o una estrofa repetidos fuera del orden de la grabación suenan
+ * igual. null si su sección nunca tiene tiempo.
+ */
+export function slideRanges(expanded: Expanded[], durationMs: number): (Range | null)[] {
+  const starts = slideStarts(expanded);
+  const sorted = [...new Set(starts.filter((s): s is number => s !== null && s < durationMs))].sort((a, b) => a - b);
+  const own = starts.map((start) => {
+    if (start === null || start >= durationMs) return null;
+    const end = sorted.find((s) => s > start) ?? durationMs;
+    return { start, end, own: true };
+  });
+  const key = (e: Expanded) => `${e.section.id}\u0001${e.slide?.id ?? ""}`;
+  return own.map((range, i) => {
+    if (range) return range;
+    const same = expanded.map((e, j) => ({ e, j })).filter(({ e, j }) => own[j] && key(e) === key(expanded[i]));
+    const source = same.filter(({ j }) => j < i).pop() ?? same[0];
+    return source ? { ...own[source.j]!, own: false } : null;
+  });
+}
+
+/** Lo que hay que hacer en este instante de la pista, estando en pantalla la diapositiva `current`. */
+export type Step =
+  | { kind: "stay" }
+  /** Mostrar otra diapositiva; con `seek`, la pista salta antes allí (un orden distinto al de la grabación). */
+  | { kind: "show"; index: number; seek?: number };
+
+/** Margen para dar por seguida una diapositiva (un salto que cae un poco antes, el redondeo del reloj). */
+const SLACK = 250;
+
+/**
+ * Avance mientras suena (modo híbrido). Si la pista sigue dentro de la diapositiva en pantalla, nada. Si acaba de
+ * terminarla, la siguiente del orden: donde siga la grabación, o saltando a donde suena esa (orden propio).
+ * Si la pista está en otra parte (se movió la barra), la diapositiva que suena ahí.
+ */
+export function step(ranges: (Range | null)[], starts: (number | null)[], current: number, ms: number): Step {
+  const range = ranges[current];
+  if (range && ms >= range.start - SLACK && ms < range.end) return { kind: "stay" };
+  if (range && ms >= range.end && ms < range.end + 4 * SLACK) {
+    const next = current + 1;
+    if (next >= ranges.length) return { kind: "stay" };
+    const target = ranges[next];
+    if (target && Math.abs(target.start - range.end) > 60) return { kind: "show", index: next, seek: target.start };
+    return { kind: "show", index: next };
+  }
+  const at = slideAt(starts, ms);
+  if (at === null || at === current) return { kind: "stay" };
+  return { kind: "show", index: at };
+}
+
 /**
  * Marca que la diapositiva desplegada k empieza en ms. Si ya tenía tiempo, sus líneas se mueven con ella.
  * Devuelve la canción cambiada (no toca la original).

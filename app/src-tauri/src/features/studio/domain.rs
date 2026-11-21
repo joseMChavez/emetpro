@@ -180,8 +180,10 @@ pub enum IssueCode {
     InvalidAudio,
     /// Empieza en el final de la pista o más allá.
     TimeOutOfTrack,
-    /// Las apariciones con tiempo deben ir hacia adelante en la pista, en el orden de la canción.
+    /// El orden vuelve atrás en la grabación (un orden propio): la pista saltará. Aviso.
     EntriesOutOfOrder,
+    /// Dos apariciones empiezan en el mismo momento de la pista.
+    SameEntryStart,
     UnknownSlide,
     /// La misma diapositiva dos veces en una aparición.
     DuplicateCue,
@@ -210,7 +212,9 @@ impl IssueCode {
     pub fn severity(self) -> Severity {
         use IssueCode::*;
         match self {
-            UnusedSection | EmptySlide | UntimedEntry | UntimedSlide | ExtraLineCues | ExtraWordCues => Severity::Warning,
+            UnusedSection | EmptySlide | UntimedEntry | UntimedSlide | ExtraLineCues | ExtraWordCues | EntriesOutOfOrder => {
+                Severity::Warning
+            }
             _ => Severity::Error,
         }
     }
@@ -331,30 +335,44 @@ impl MediaSong {
     }
 
     fn check_timing(&self, duration: u32, issues: &mut Issues) {
-        // Las apariciones con tiempo, en el orden de la canción; cada una termina donde empieza la siguiente.
         let timed: Vec<(&OrderEntry, &Timing)> = self.order.iter().filter_map(|e| e.timing.as_ref().map(|t| (e, t))).collect();
-        for entry in self.order.iter().filter(|e| e.timing.is_none()) {
+        // Una aparición sin tiempo propio usa el de otra vez que suena su sección (la pista salta allí): solo se
+        // avisa si su sección no suena nunca.
+        let timed_sections: HashSet<&str> = timed.iter().map(|(e, _)| e.section.as_str()).collect();
+        for entry in self.order.iter().filter(|e| e.timing.is_none() && !timed_sections.contains(e.section.as_str())) {
             issues.add(IssueCode::UntimedEntry, at_entry(&entry.id));
         }
+        // Cada aparición termina donde empieza la siguiente *en la grabación*. El orden de la canción puede ir y
+        // volver por la grabación (un orden propio): la pista salta, y se avisa por si fue sin querer.
+        let mut starts: Vec<u32> = timed.iter().map(|(_, t)| t.start_ms).filter(|&s| s < duration).collect();
+        starts.sort_unstable();
         for (i, (entry, timing)) in timed.iter().enumerate() {
             if timing.start_ms >= duration {
                 issues.add(IssueCode::TimeOutOfTrack, at_entry(&entry.id));
                 continue;
             }
-            let next = timed.get(i + 1).map(|(_, t)| t.start_ms);
-            if next.is_some_and(|next| next <= timing.start_ms) {
-                issues.add(IssueCode::EntriesOutOfOrder, at_entry(&timed[i + 1].0.id));
+            if timed[..i].iter().any(|(_, t)| t.start_ms == timing.start_ms) {
+                issues.add(IssueCode::SameEntryStart, at_entry(&entry.id));
+                continue;
             }
-            // Si la siguiente está mal colocada, esta se revisa hasta el final de la pista.
-            let end = next.filter(|&n| n > timing.start_ms && n <= duration).unwrap_or(duration);
+            if i > 0 && timed[i - 1].1.start_ms > timing.start_ms {
+                issues.add(IssueCode::EntriesOutOfOrder, at_entry(&entry.id));
+            }
+            let end = starts.iter().copied().find(|&s| s > timing.start_ms).unwrap_or(duration);
             if let Some(section) = self.section(&entry.section) {
-                check_entry(entry, timing, end, section, issues);
+                // Diapositivas con tiempo en alguna aparición de su sección: las demás apariciones lo usan.
+                let cued: HashSet<&str> = timed
+                    .iter()
+                    .filter(|(e, _)| e.section == section.id)
+                    .flat_map(|(_, t)| t.slides.iter().map(|c| c.slide.as_str()))
+                    .collect();
+                check_entry(entry, timing, end, section, &cued, issues);
             }
         }
     }
 }
 
-fn check_entry(entry: &OrderEntry, timing: &Timing, end: u32, section: &SongSection, issues: &mut Issues) {
+fn check_entry(entry: &OrderEntry, timing: &Timing, end: u32, section: &SongSection, cued: &HashSet<&str>, issues: &mut Issues) {
     let position: HashMap<&str, usize> = section.slides.iter().enumerate().map(|(i, s)| (s.id.as_str(), i)).collect();
     let mut seen = HashSet::new();
     let mut last: Option<(usize, u32)> = None;
@@ -383,7 +401,8 @@ fn check_entry(entry: &OrderEntry, timing: &Timing, end: u32, section: &SongSect
             .unwrap_or(end);
         check_slide(&entry.id, &section.slides[index], &section.id, cue, slide_end, issues);
     }
-    for slide in section.slides.iter().filter(|s| !timing.slides.iter().any(|c| c.slide == s.id)) {
+    // Sin tiempo en ninguna aparición: no avanza sola. La primera empieza con su aparición.
+    for slide in section.slides.iter().skip(1).filter(|s| !cued.contains(s.id.as_str())) {
         issues.add(IssueCode::UntimedSlide, at_slide(Some(&entry.id), &section.id, &slide.id));
     }
 }
@@ -588,10 +607,20 @@ mod tests {
     }
 
     #[test]
-    fn apariciones_hacia_adelante_y_dentro_de_la_pista() {
+    fn apariciones_dentro_de_la_pista() {
+        // Un orden propio que vuelve atrás en la grabación: se puede, con un aviso. La estrofa 2 (15 s) dura hasta
+        // el siguiente comienzo en la grabación (el coro, a los 20 s).
         let mut song = sample();
         song.order[3].timing = timing(15_000, vec![cue("v2a", 15_000, vec![])]);
-        assert!(codes(&song).contains(&IssueCode::EntriesOutOfOrder));
+        let issues = song.validate();
+        assert_eq!(issues.iter().map(|i| (i.code, i.severity)).collect::<Vec<_>>(), vec![(IssueCode::EntriesOutOfOrder, Severity::Warning)]);
+        song.order[3].timing.as_mut().unwrap().slides[0].start_ms = 20_000;
+        assert!(codes(&song).contains(&IssueCode::SlideOutsideEntry));
+
+        // Dos apariciones en el mismo momento: error.
+        let mut song = sample();
+        song.order[3].timing = timing(20_000, vec![]);
+        assert!(codes(&song).contains(&IssueCode::SameEntryStart));
 
         let mut song = sample();
         song.order[4].timing = timing(100_000, vec![]);
@@ -611,15 +640,24 @@ mod tests {
 
         let mut song = sample();
         song.order[4].timing.as_mut().unwrap().slides[1].slide = "v1a".into();
-        assert_eq!(codes(&song), vec![IssueCode::UnknownSlide, IssueCode::UntimedSlide]);
+        assert_eq!(codes(&song), vec![IssueCode::UnknownSlide]);
 
         let mut song = sample();
         song.order[4].timing.as_mut().unwrap().slides[1].slide = "c1".into();
-        assert_eq!(codes(&song), vec![IssueCode::DuplicateCue, IssueCode::UntimedSlide]);
+        assert_eq!(codes(&song), vec![IssueCode::DuplicateCue]);
 
+        // Sin tiempo en el segundo coro, pero lo tiene en el primero: usa ese, sin aviso.
         let mut song = sample();
         song.order[4].timing.as_mut().unwrap().slides.pop();
-        assert_eq!(codes(&song), vec![IssueCode::UntimedSlide]);
+        assert_eq!(codes(&song), vec![]);
+        // Sin tiempo en ningún coro: aviso.
+        song.order[2].timing.as_mut().unwrap().slides.pop();
+        assert_eq!(codes(&song), vec![IssueCode::UntimedSlide, IssueCode::UntimedSlide]);
+
+        // Una estrofa repetida al final sin tiempo propio usa el de la primera vez: sin aviso.
+        let mut song = sample();
+        song.order.push(entry("e5", "v1", None));
+        assert_eq!(codes(&song), vec![]);
     }
 
     #[test]

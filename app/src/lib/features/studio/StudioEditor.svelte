@@ -59,8 +59,15 @@
     onprepare(content.kind === "text" ? { ...content, index: Math.min(index, content.slides.length - 1) } : content);
   }
 
+  /** Hay cambios sin guardar (para no perder, por ejemplo, los tiempos marcados al pulsar Cancelar). */
+  let dirty = $state(false);
+  let confirmDiscard = $state(false);
+  let issuesBox = $state<HTMLElement>();
+
   function changed() {
     issues = null;
+    dirty = true;
+    confirmDiscard = false;
     preview();
   }
 
@@ -165,10 +172,9 @@
     const j = i + by;
     if (j < 0 || j >= song.order.length) return;
     const order = snapshot().order;
+    // Los tiempos dicen dónde suena cada aparición en la grabación: se quedan. Con pista, la pista salta para
+    // seguir el orden nuevo.
     [order[i], order[j]] = [order[j], order[i]];
-    // Al cambiar el orden, los tiempos dejan de corresponder a la grabación: se quitan los de las dos.
-    order[i] = { ...order[i], timing: null };
-    order[j] = { ...order[j], timing: null };
     song.order = order;
     changed();
   }
@@ -194,6 +200,7 @@
     song.order = updated.order;
     next++;
     issues = null;
+    dirty = true;
   }
 
   function unmark() {
@@ -201,6 +208,7 @@
     next--;
     song.order = clearStart(snapshot(), expanded, next).order;
     issues = null;
+    dirty = true;
   }
 
   async function goRow(k: number) {
@@ -215,6 +223,7 @@
     if (start === null) return;
     song.order = markStart(snapshot(), expanded, k, start + ms).order;
     issues = null;
+    dirty = true;
   }
 
   function isTyping(el: EventTarget | null): boolean {
@@ -250,12 +259,26 @@
     try {
       const outcome = await saveStudioSong(snapshot());
       issues = outcome.issues;
-      if (outcome.saved) close(snapshot());
+      if (outcome.saved) {
+        dirty = false;
+        close(snapshot());
+      } else {
+        // No se guardó: que se vea por qué.
+        requestAnimationFrame(() => issuesBox?.scrollIntoView({ block: "center", behavior: "smooth" }));
+      }
     } catch (e) {
       onerror(toMessage(e));
     } finally {
       saving = false;
     }
+  }
+
+  function cancel() {
+    if (dirty && !confirmDiscard) {
+      confirmDiscard = true;
+      return;
+    }
+    close(null);
   }
 
   function close(saved: MediaSong | null) {
@@ -419,7 +442,7 @@
   </details>
 
   {#if issues}
-    <div class="issues" role="status">
+    <div class="issues" role="status" bind:this={issuesBox}>
       {#if issues.length === 0}
         <p class="ok">✓ {t("studio.valid")}</p>
       {:else}
@@ -438,7 +461,8 @@
   {/if}
 
   <div class="row end actions">
-    <button type="button" class="btn ghost" onclick={() => close(null)}>{t("studio.cancel")}</button>
+    {#if confirmDiscard}<span class="small discard">{t("studio.discardConfirm")}</span>{/if}
+    <button type="button" class="btn ghost" class:danger={confirmDiscard} onclick={cancel}>{t(confirmDiscard ? "studio.discard" : "studio.cancel")}</button>
     <button type="button" class="btn" onclick={validate}>{t("studio.validate")}</button>
     <button type="submit" class="btn primary" disabled={saving}>{t("studio.save")}</button>
   </div>
@@ -487,4 +511,5 @@
   .actions { position: sticky; bottom: 0; padding: 8px 0; background: var(--surface); }
   summary { cursor: pointer; }
   .reference-open { align-self: flex-end; }
+  .discard { color: var(--live); font-weight: 600; }
 </style>

@@ -5,7 +5,7 @@
   import { t } from "$lib/i18n/index.svelte";
   import type { OutputContent } from "$lib/platform";
   import { studio, loadStudio } from "./library.svelte";
-  import { attach, follow, goTo, onScreen, sectionTarget, sectionsOnScreen, trackReady } from "./live.svelte";
+  import { attach, follow, goTo, onScreen, sectionTarget, sectionsOnScreen, synced, trackReady } from "./live.svelte";
   import { player } from "./player.svelte";
   import { sectionName } from "./names";
   import { sectionOf } from "./song";
@@ -70,6 +70,10 @@
           />
         {/if}
       </div>
+      {#if trackReady() && !synced()}
+        <!-- Sin tiempos la pista no tiene a dónde saltar: que se note, no que parezca que falla. -->
+        <p class="notice small" role="status">{t("studio.notSynced")}</p>
+      {/if}
     {:else}
       <p class="muted small">{t("studio.liveHint")}</p>
     {/if}
@@ -103,4 +107,5 @@
   .section[aria-pressed="true"] { border-color: var(--live); background: var(--live-soft); font-weight: 700; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live); }
   .error { color: var(--live); }
+  .notice { margin: 0; padding: 6px 10px; border-radius: 8px; background: var(--warn-bg); color: var(--warn-text); }
 </style>
