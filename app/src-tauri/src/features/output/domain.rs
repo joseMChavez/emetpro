@@ -128,6 +128,15 @@ pub enum OutputContent {
         /// Con formato (D-027), una por diapositiva; `slides` lleva su texto plano.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         rich: Option<Vec<RichSlide>>,
+        /// Canción de Media Studio (D-029) de la que salen estas diapositivas: la consola la sigue con su pista.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        studio: Option<String>,
+        /// Fondo propio de cada diapositiva (el de su sección en Media Studio); None = `background`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        backgrounds: Option<Vec<Option<String>>>,
+        /// Media Studio: cuándo empieza (ms de la pista) cada palabra de cada diapositiva, para iluminar la que suena.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        words: Option<Vec<Option<Vec<Option<u32>>>>>,
     },
     Image {
         path: String,

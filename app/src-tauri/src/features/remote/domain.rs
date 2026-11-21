@@ -33,6 +33,16 @@ pub enum Command {
     Mark { part: MarkPart, from: u32, to: u32, style: MarkStyle, color: MarkColor },
     /// Quitar las palabras resaltadas del versículo o la diapositiva en pantalla.
     ClearMarks,
+    /// Media Studio (D-029): reproducir o pausar la pista de la canción en pantalla.
+    TrackToggle,
+    /// Repetir (o dejar de repetir) la sección en pantalla.
+    TrackLoop,
+    /// Terminar la canción con un fundido.
+    TrackFinish,
+    /// Dejar sonando de fondo, más suave, la canción que siguió sonando al poner otra cosa en pantalla.
+    TrackBackground,
+    /// Saltar a una sección de la canción en pantalla, por su id.
+    StudioSection { id: String },
 }
 
 /// El texto principal o, en la Biblia, la segunda versión.
@@ -61,7 +71,7 @@ impl Command {
             }
             Command::SetBible { id } => !id.is_empty() && id.len() <= MAX_TEXT,
             Command::Show { key } => !key.is_empty() && key.len() <= MAX_TEXT,
-            Command::PlanItem { id } => !id.is_empty() && id.len() <= MAX_TEXT,
+            Command::PlanItem { id } | Command::StudioSection { id } => !id.is_empty() && id.len() <= MAX_TEXT,
             Command::GoTo { n } => (1..=10_000).contains(n),
             Command::ShowSheet { id } => !id.is_empty() && id.len() <= 64,
             // La ventana de salida mide como mucho 600 palabras.
@@ -132,6 +142,12 @@ mod tests {
         assert_eq!(Command::parse(r#"{"type":"planItem","id":"abc"}"#), Some(Command::PlanItem { id: "abc".into() }));
         assert_eq!(Command::parse(r#"{"type":"planItem","id":""}"#), None);
         assert_eq!(Command::parse(r#"{"type":"goTo","n":12}"#), Some(Command::GoTo { n: 12 }));
+        assert_eq!(Command::parse(r#"{"type":"trackToggle"}"#), Some(Command::TrackToggle));
+        assert_eq!(Command::parse(r#"{"type":"trackLoop"}"#), Some(Command::TrackLoop));
+        assert_eq!(Command::parse(r#"{"type":"trackFinish"}"#), Some(Command::TrackFinish));
+        assert_eq!(Command::parse(r#"{"type":"trackBackground"}"#), Some(Command::TrackBackground));
+        assert_eq!(Command::parse(r#"{"type":"studioSection","id":"coro"}"#), Some(Command::StudioSection { id: "coro".into() }));
+        assert_eq!(Command::parse(r#"{"type":"studioSection","id":""}"#), None);
         assert_eq!(Command::parse(r#"{"type":"goTo","n":0}"#), None);
         assert_eq!(Command::parse(r#"{"type":"goTo","n":-1}"#), None);
         assert_eq!(Command::parse(r#"{"type":"showSheet","id":"h1"}"#), Some(Command::ShowSheet { id: "h1".into() }));

@@ -21,7 +21,17 @@ export type RemoteCommand =
   /** Resaltar (o desmarcar) de la palabra `from` a la `to` de lo que está en pantalla (D-023). */
   | { type: "mark"; part: MarkPart; from: number; to: number; style: MarkStyle; color: MarkColor }
   /** Quitar las palabras resaltadas del versículo o la diapositiva en pantalla. */
-  | { type: "clearMarks" };
+  | { type: "clearMarks" }
+  /** Media Studio (D-029): reproducir o pausar la pista de la canción en pantalla. */
+  | { type: "trackToggle" }
+  /** Repetir (o dejar de repetir) la sección en pantalla. */
+  | { type: "trackLoop" }
+  /** Terminar la canción con un fundido. */
+  | { type: "trackFinish" }
+  /** Dejar de fondo, más suave, la canción que sigue sonando tras poner otra cosa en pantalla. */
+  | { type: "trackBackground" }
+  /** Saltar a una sección de la canción en pantalla (la pista la sigue). */
+  | { type: "studioSection"; id: string };
 
 /** Algo que se puede volver a poner en pantalla desde el teléfono: lo preparado en la consola o lo reciente. */
 export interface RemoteItem {
@@ -82,6 +92,21 @@ export type RemoteLive =
   /** Imagen, video, reloj…: el teléfono muestra la descripción de la consola. */
   | { kind: "other"; description: string };
 
+/** Una canción de Media Studio en pantalla (D-029). */
+export interface RemoteStudio {
+  /** null = en directo (sin pista): solo secciones. */
+  playing: boolean | null;
+  /** Terminando con el fundido. */
+  finishing: boolean;
+  loop: boolean;
+  sections: { id: string; name: string; current: boolean }[];
+  /**
+   * Se puso otra cosa en pantalla y la canción sigue sonando: su título. `asking`: todavía no se eligió entre
+   * terminarla o dejarla de fondo; `soft`: suena de fondo, más suave.
+   */
+  behind?: { title: string; asking: boolean; soft: boolean } | null;
+}
+
 /** Lo que la consola publica cada vez que cambia algo. */
 export interface RemoteStatus {
   /** La ventana de salida está abierta. */
@@ -101,6 +126,8 @@ export interface RemoteStatus {
   canvas: RemoteCanvas | null;
   /** El plan abierto en la consola; null si no hay. */
   plan: RemotePlan | null;
+  /** La canción de Media Studio en pantalla; null si no hay. Las versiones anteriores del teléfono no lo leen. */
+  studio?: RemoteStudio | null;
   /** Las versiones que se pueden elegir. */
   bibles: { id: string; abbreviation: string; name: string }[];
   /** La Biblia elegida en la consola: el teléfono busca en ella. */

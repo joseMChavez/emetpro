@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 pub const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp", "svg", "avif"];
 pub const VIDEO_EXTENSIONS: &[&str] = &["mp4", "m4v", "mov", "webm", "mkv", "ogv"];
 pub const PDF_EXTENSIONS: &[&str] = &["pdf"];
+/// Pistas de Media Studio (D-029). No son un medio que se muestre: `media_kind` no las reconoce.
+pub const AUDIO_EXTENSIONS: &[&str] = &["mp3", "m4a", "aac", "wav", "ogg", "oga", "opus", "flac"];
 /// Se convierten a PDF para mostrarlas (features/presentations).
 pub const PRESENTATION_EXTENSIONS: &[&str] = &["pptx", "ppt", "ppsx", "pps", "odp"];
 

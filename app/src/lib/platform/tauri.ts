@@ -4,7 +4,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import type { RemoteCommand } from "$lib/features/remote/protocol";
 import type { BoardMessage } from "$lib/features/remote/board";
-import type { OfficeProgress, OutputState, Platform, StoredSettings, VideoTime } from "./types";
+import type { OfficeProgress, OutputState, Platform, StoredSettings, StudioTime, VideoTime } from "./types";
 
 export const tauriPlatform: Platform = {
   listMonitors: () => invoke("plugin:output|list_monitors"),
@@ -37,6 +37,9 @@ export const tauriPlatform: Platform = {
   // De ventana a ventana, sin pasar por el backend: es solo para que la consola vea el video donde va.
   reportVideoTime: (time) => emit("output-video-time", time),
   onVideoTime: (handler) => listen<VideoTime>("output-video-time", (event) => handler(event.payload)),
+  // Igual: de la consola a la salida, sin pasar por el backend; solo al reproducir, pausar o saltar y cada segundo.
+  reportStudioTime: (time) => emit("studio-time", time),
+  onStudioTime: (handler) => listen<StudioTime>("studio-time", (event) => handler(event.payload)),
   listBibles: () => invoke("plugin:bible|list_bibles"),
   importBibles: (title, filterName) => invoke("plugin:bible|import_bibles", { title, filterName }),
   removeBible: (id) => invoke("plugin:bible|remove_bible", { id }),
@@ -51,6 +54,16 @@ export const tauriPlatform: Platform = {
   songSave: (song) => invoke("plugin:songs|song_save", { song }),
   songDelete: (id) => invoke("plugin:songs|song_delete", { id }),
   songsReset: () => invoke("plugin:songs|songs_reset"),
+  studioList: () => invoke("plugin:studio|studio_list"),
+  studioValidate: (song) => invoke("plugin:studio|studio_validate", { song }),
+  studioSave: (song) => invoke("plugin:studio|studio_save", { song }),
+  studioDelete: (id) => invoke("plugin:studio|studio_delete", { id }),
+  studioPickAudio: (title, filterName) => invoke("plugin:studio|studio_pick_audio", { title, filterName }),
+  studioReadAudio: (path) => invoke("plugin:studio|studio_read_audio", { path }),
+  studioExport: (title, filterName, fileName, songIds) =>
+    invoke("plugin:transfer|studio_export", { title, filterName, fileName, songIds }),
+  studioSaveSvg: (svg) => invoke("plugin:studio|studio_save_svg", { svg }),
+  studioOpenReference: (url) => invoke("plugin:studio|studio_open_reference", { url }),
   plansList: () => invoke("plugin:plans|plans_list"),
   planSave: (plan) => invoke("plugin:plans|plan_save", { plan }),
   planDelete: (id) => invoke("plugin:plans|plan_delete", { id }),

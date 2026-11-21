@@ -9,6 +9,7 @@ pub mod presentations;
 pub mod remote;
 pub mod settings;
 pub mod songs;
+pub mod studio;
 pub mod transfer;
 
 #[cfg(test)]

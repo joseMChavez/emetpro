@@ -102,6 +102,7 @@
     playing = false,
     follow = null,
     onvideotime,
+    word = null,
     animated = false,
     onunplayable,
   }: {
@@ -116,6 +117,8 @@
     follow?: (VideoTime & { at: number }) | null;
     /** La ventana de salida avisa por dónde va el video. */
     onvideotime?: (time: VideoTime) => void;
+    /** Media Studio (D-029): la palabra que suena (su número en la diapositiva), con una sombra suave. */
+    word?: number | null;
     /** Con animaciones (D-024): la ventana de salida y las vistas grandes de la consola; las miniaturas no. */
     animated?: boolean;
     onerror?: (message: string) => void;
@@ -230,11 +233,16 @@
 
   let backdropPath = $derived.by(() => {
     if (!lyric && !clock && content.kind !== "empty") return null;
-    return ((content.kind === "text" || content.kind === "timer") && content.background) || style.backgroundImage || null;
+    // Una diapositiva con su propio fondo (la sección de una canción de Media Studio) tapa el de la canción.
+    const own = content.kind === "text" ? content.backgrounds?.[content.index] : null;
+    return own || ((content.kind === "text" || content.kind === "timer") && content.background) || style.backgroundImage || null;
   });
   let backdrop = $derived(backdropPath ? playableUrl(backdropPath) || null : null);
   /** Un fondo de video va en bucle y sin sonido; en las miniaturas se ve su primer cuadro. */
   let backdropVideo = $derived(backdropPath !== null && isVideo(backdropPath));
+
+  /** Media Studio: la diapositiva tiene sus palabras con tiempo; cada una lleva su propio elemento. */
+  let timedWords = $derived(content.kind === "text" && !!content.words?.[content.index]);
 
   // ---- Animaciones (D-024) ----
 
@@ -440,8 +448,9 @@
         data-mark={p.mark ? `${p.mark.style}:${p.mark.color}` : undefined}
         style:--mc={p.mark ? MARK_HEX[p.mark.color] : undefined}>{p.text}</span>{/each}{#if block.pieces.length === 0}<br />{/if}</p>{/each}</div>{/snippet}
 
-{#snippet marked(text: string, part: MarkPart, marks: Map<number, WordMark>)}{#each segments(text, marks) as seg}{#if seg.mark || ((marking || entering) && seg.w !== null)}<span
+{#snippet marked(text: string, part: MarkPart, marks: Map<number, WordMark>)}{#each segments(text, marks) as seg}{#if seg.mark || ((marking || entering || timedWords) && seg.w !== null)}<span
         class="word {seg.mark ? `wm ${seg.mark.style}` : ''} {seg.w === null ? 'gap' : ''}"
+        class:now={part === "text" && word !== null && seg.w === word}
         style:--d={entering && seg.w !== null ? `${Math.round(entrance.delays[part === "text" ? 0 : 1][seg.w] ?? 0)}ms` : undefined}
         style:--n={entering && seg.w !== null ? [...seg.text].length : undefined}
         style:--c={entering ? `${entrance.charMs}ms` : undefined}
@@ -482,7 +491,10 @@
         }}
       ></video>
     {:else}
-      <img class="backdrop" class:drift={anim.background === "slow"} src={backdrop} alt="" />
+      <!-- Al cambiar de fondo (otra sección con el suyo), el nuevo entra con un fundido. -->
+      {#key backdrop}
+        <img class="backdrop" class:drift={anim.background === "slow"} class:fade-in={animated} src={backdrop} alt="" />
+      {/key}
     {/if}
     <div class="shade"></div>
   {/if}
@@ -671,6 +683,9 @@
   }
   /* Movimiento lento de la imagen de fondo (D-024): se acerca y se desplaza un poco, ida y vuelta. */
   .backdrop.drift { animation: drift 40s ease-in-out infinite alternate; }
+  .backdrop.fade-in { animation: backdrop-in 700ms ease-out; }
+  .backdrop.fade-in.drift { animation: backdrop-in 700ms ease-out, drift 40s ease-in-out infinite alternate; }
+  @keyframes backdrop-in { from { opacity: 0; } }
   @keyframes drift {
     from { transform: scale(1.02) translate(0, 0); }
     to { transform: scale(1.14) translate(-2.5%, -1.5%); }
@@ -752,6 +767,8 @@
   }
   .wm.color { color: var(--mc); }
   /* Resaltando: las palabras se pueden tocar aunque la vista previa no reciba el ratón. */
+  /* La palabra que suena (Media Studio): solo una sombra suave del color del texto, sin cambiar el color. */
+  .word.now { text-shadow: 0 0 0.18em currentColor, 0 0 0.55em color-mix(in srgb, currentColor 55%, transparent); transition: text-shadow 120ms ease-out; }
   .view.marking .word[data-w] {
     pointer-events: auto;
     cursor: pointer;

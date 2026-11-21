@@ -11,7 +11,10 @@ import { platform, type OutputContent, type OutputState, type RemoteInfo } from 
 import { openPlan } from "$lib/features/plans/plans.svelte";
 import { detail, icon, problem, session, title } from "$lib/features/plans/items.svelte";
 import { pageCount, pageJpeg } from "$lib/features/output/pdf";
-import type { RemoteCanvas, RemoteItem, RemoteLive, RemotePlan, RemoteStatus, RemoteStrip } from "./protocol";
+import type { RemoteCanvas, RemoteItem, RemoteLive, RemotePlan, RemoteStatus, RemoteStrip, RemoteStudio } from "./protocol";
+import { behind as studioBehind, behindStatus, onScreen as studioOnScreen, sectionsOnScreen, trackReady as studioTrackReady } from "$lib/features/studio/live.svelte";
+import { player as studioPlayer } from "$lib/features/studio/player.svelte";
+import { sectionName } from "$lib/features/studio/names";
 import { layerKey } from "./board";
 
 const MAX_ITEMS = 6;
@@ -229,6 +232,27 @@ function canvasOf(content: OutputContent, description: string): RemoteCanvas | n
 }
 
 /** Lo que verán los teléfonos. `description` es el texto de la consola para lo que el teléfono no sabe contar. */
+/** La canción de Media Studio en pantalla, para el teléfono: la pista y sus secciones. */
+function studioOf(): RemoteStudio | null {
+  const song = studioOnScreen.song;
+  const background = behindStatus();
+  if (!song) {
+    // Otra cosa en pantalla y la canción sigue sonando: el teléfono también la puede parar o dejar de fondo.
+    if (!background) return null;
+    return { playing: studioPlayer.playing, finishing: studioPlayer.finishing, loop: studioBehind.loop, sections: [], behind: background };
+  }
+  void studioOnScreen.index;
+  return {
+    playing: song.mode === "track" && studioTrackReady() ? studioPlayer.playing : null,
+    finishing: studioPlayer.finishing,
+    loop: studioOnScreen.loop,
+    sections: sectionsOnScreen().flatMap((s) => {
+      const section = song.sections.find((x) => x.id === s.id);
+      return section ? [{ id: s.id, name: sectionName(song, section), current: s.current }] : [];
+    }),
+  };
+}
+
 export function remoteStatus(
   output: OutputState,
   prepared: OutputContent,
@@ -249,6 +273,7 @@ export function remoteStatus(
     items: items(output.content, prepared, describe),
     canvas: canvasOf(output.content, description),
     plan: planOf(),
+    studio: studioOf(),
     bibles: visibleBibles().map((b) => ({ id: b.id, abbreviation: b.abbreviation, name: b.name })),
     bible: bible && { id: bible.id, abbreviation: bible.abbreviation, language: bookLanguage(bible), books: bible.books },
   };

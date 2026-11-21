@@ -33,6 +33,12 @@ export type OutputContent =
       animation?: TextAnimation;
       /** Con formato (D-027): una por diapositiva. `slides` lleva su texto plano, que manda para marcas y teléfono. */
       rich?: RichSlide[];
+      /** Canción de Media Studio de la que salen (D-029): la consola la sigue con su pista. */
+      studio?: string | null;
+      /** Fondo propio de cada diapositiva (el de su sección en Media Studio); null = `background`. */
+      backgrounds?: (string | null)[];
+      /** Media Studio: cuándo empieza (ms de la pista) cada palabra de cada diapositiva; null = sin marcar. */
+      words?: ((number | null)[] | null)[];
     }
   | { kind: "image"; path: string }
   | {
@@ -187,6 +193,98 @@ export interface ObsCamera {
   name: string;
 }
 
+// ---- Media Studio (D-029; features/studio/domain.rs) ----
+// Tiempos en ms desde el comienzo de la pista; solo comienzos: cada tramo dura hasta que empieza el siguiente.
+
+export type SongMode = "track" | "live";
+export type SectionKind = "intro" | "verse" | "preChorus" | "chorus" | "bridge" | "instrumental" | "interlude" | "tag" | "outro" | "custom";
+
+export interface AudioTrack {
+  path: string;
+  name: string;
+  durationMs: number;
+}
+
+export interface SongRights {
+  composition: string;
+  lyrics: string;
+  recording: string;
+  license: string;
+  notes: string;
+}
+
+export interface SongSlide {
+  id: string;
+  lines: string[];
+}
+
+export interface SongSection {
+  id: string;
+  kind: SectionKind;
+  /** Vacío = el nombre de su tipo. */
+  label: string;
+  slides: SongSlide[];
+  /** Fondo propio de la sección; null = el de la canción. */
+  background?: string | null;
+}
+
+export interface LineCue {
+  startMs: number;
+  endMs?: number | null;
+  words?: number[];
+}
+
+export interface SlideCue {
+  slide: string;
+  startMs: number;
+  lines?: LineCue[];
+  /** La repartió la app («Repartir diapositivas»), no se marcó: se puede volver a repartir. */
+  auto?: boolean;
+}
+
+export interface Timing {
+  startMs: number;
+  slides: SlideCue[];
+}
+
+export interface OrderEntry {
+  id: string;
+  section: string;
+  timing?: Timing | null;
+}
+
+export interface MediaSong {
+  id: string;
+  title: string;
+  artist: string;
+  mode: SongMode;
+  audio: AudioTrack | null;
+  sections: SongSection[];
+  order: OrderEntry[];
+  rights: SongRights;
+  /** Enlace para escucharla al preparar (YouTube…). Solo se abre en el navegador. */
+  reference: string;
+  background: string | null;
+  animation?: TextAnimation | null;
+}
+
+export type IssueCode =
+  | "missingTitle" | "invalidReference" | "missingId" | "duplicateId" | "emptyOrder" | "unknownSection" | "trackWithoutAudio" | "invalidAudio"
+  | "timeOutOfTrack" | "entriesOutOfOrder" | "sameEntryStart" | "unknownSlide" | "duplicateCue" | "slidesOutOfOrder" | "slideOutsideEntry"
+  | "linesOutOfOrder" | "lineOutsideSlide" | "lineEndBeforeStart" | "linesOverlap" | "wordsOutOfOrder" | "wordOutsideLine"
+  | "unusedSection" | "emptySlide" | "untimedEntry" | "untimedSlide" | "extraLineCues" | "extraWordCues" | "shortSlide";
+
+export interface SongIssue {
+  code: IssueCode;
+  severity: "error" | "warning";
+  at: { entry?: string; section?: string; slide?: string; line?: number; word?: number };
+}
+
+export interface StudioSaveOutcome {
+  saved: boolean;
+  issues: SongIssue[];
+}
+
 /** Letra guardada en la biblioteca. */
 export interface Song {
   id: string;
@@ -311,6 +409,9 @@ export interface PlanImportPreview {
   identical: number;
   conflicts: ImportSong[];
   bibles: BibleRef[];
+  /** Canciones de Media Studio que trae (títulos), y las que ya están en este equipo con otro contenido. */
+  studio: string[];
+  studioConflicts: string[];
 }
 
 export interface PlanImportResult {
@@ -319,6 +420,8 @@ export interface PlanImportResult {
   skipped: number;
   added: number;
   replaced: number;
+  /** Canciones de Media Studio guardadas. */
+  studio: number;
 }
 
 export interface ImportResult {
@@ -346,6 +449,8 @@ export type PlanItem = { id: string } & (
   /** `animate` vale para lo que sigue hasta la sección siguiente; null = como el plan (D-024). */
   | { kind: "section"; title: string; animate?: boolean | null }
   | { kind: "song"; songId: string; marks?: Marks }
+  /** Una canción de Media Studio (D-029), con su pista y sus fondos. */
+  | { kind: "studioSong"; studioSongId: string }
   | { kind: "media"; path: string; media: MediaKind }
   | { kind: "pause"; title: string; durationMs: number; background?: string | null }
   /** Texto con formato escrito en el plan (D-027): un sermón, avisos. */
@@ -371,6 +476,13 @@ export interface PlayableVideo {
   url: string | null;
   /** Es la copia en MP4, no el original. */
   converted: boolean;
+}
+
+/** Por dónde va la pista de la canción de Media Studio en pantalla (D-029), de la consola a la salida. */
+export interface StudioTime {
+  song: string;
+  ms: number;
+  playing: boolean;
 }
 
 export interface VideoTime {
@@ -445,6 +557,9 @@ export interface Platform {
   onOutputNavigate(handler: (forward: boolean) => void): Promise<() => void>;
   /** La ventana de salida avisa por dónde va el video, para que la consola lo siga en su vista. */
   reportVideoTime(time: VideoTime): Promise<void>;
+  /** La consola avisa por dónde va la pista de Media Studio, para que la salida ilumine la palabra que suena. */
+  reportStudioTime(time: StudioTime): Promise<void>;
+  onStudioTime(handler: (time: StudioTime) => void): Promise<() => void>;
   onVideoTime(handler: (time: VideoTime) => void): Promise<() => void>;
   listBibles(): Promise<BibleInfo[]>;
   /** Abre el selector de archivos XML; devuelve las Biblias importadas ([] si se cancela). */
@@ -467,6 +582,23 @@ export interface Platform {
   songDelete(id: string): Promise<void>;
   /** Borra la biblioteca de letras (los planes las marcan como borradas). */
   songsReset(): Promise<void>;
+
+  // Media Studio (D-029)
+  studioList(): Promise<MediaSong[]>;
+  studioValidate(song: MediaSong): Promise<SongIssue[]>;
+  /** Solo guarda si no hay errores. */
+  studioSave(song: MediaSong): Promise<StudioSaveOutcome>;
+  studioDelete(id: string): Promise<void>;
+  /** Elige una pista (audio, o un video del que se saca el audio) y la deja en la carpeta de la app; null si se cancela. */
+  studioPickAudio(title: string, filterName: string): Promise<{ path: string; name: string; fromVideo: boolean } | null>;
+  /** Exporta canciones de Media Studio a un .emetplan (con su pista y sus fondos); null si se cancela. */
+  studioExport(title: string, filterName: string, fileName: string, songIds: string[]): Promise<PlanExportResult | null>;
+  /** Guarda un fondo animado generado (SVG) en la carpeta de la app y devuelve su ruta. */
+  studioSaveSvg(svg: string): Promise<string>;
+  /** Abre el enlace de referencia en el navegador (solo http/https). */
+  studioOpenReference(url: string): Promise<void>;
+  /** Los bytes de una pista de la carpeta de la app, para decodificarla. */
+  studioReadAudio(path: string): Promise<ArrayBuffer>;
 
   // Planes del culto (features/plans)
   /** Con fecha primero, del más próximo al más lejano; después los que no tienen fecha. */

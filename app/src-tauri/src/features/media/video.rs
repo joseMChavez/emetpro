@@ -133,6 +133,45 @@ pub fn convert(source: &Path, cache: &Path) -> Result<PathBuf, VideoError> {
 }
 
 /// Err con la última línea que el programa escribió como error.
+/// Saca solo el audio de un video a `target` (.m4a), para las pistas de Media Studio (D-029). Primero copia el audio
+/// tal cual (el AAC de un mp4 o de un iPhone: segundos y sin perder calidad); si no se puede, lo pasa a AAC.
+pub fn extract_audio(source: &Path, target: &Path) -> Result<(), VideoError> {
+    let mut attempts: Vec<(&'static str, Command)> = Vec::new();
+    let avconvert = Path::new("/usr/bin/avconvert");
+    if cfg!(target_os = "macos") && avconvert.is_file() {
+        let mut command = Command::new(avconvert);
+        command.args(["-p", "PresetAppleM4A", "-s"]).arg(source).arg("-o").arg(target);
+        attempts.push(("avconvert", command));
+    }
+    if let Some(ffmpeg) = find_ffmpeg() {
+        for codec in [&["-c:a", "copy"][..], &["-c:a", "aac", "-b:a", "192k"][..]] {
+            let mut command = Command::new(&ffmpeg);
+            command
+                .args(["-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-i"])
+                .arg(source)
+                .args(["-vn", "-map", "0:a:0"])
+                .args(codec)
+                .args(["-f", "mp4"])
+                .arg(target);
+            attempts.push(("ffmpeg", command));
+        }
+    }
+    if attempts.is_empty() {
+        return Err(VideoError::NoConverter);
+    }
+    let mut failures = Vec::new();
+    for (name, command) in attempts {
+        let _ = std::fs::remove_file(target);
+        match run(command) {
+            Ok(()) if target.metadata().is_ok_and(|m| m.len() > 0) => return Ok(()),
+            Ok(()) => failures.push(format!("{name}: no creó el archivo")),
+            Err(reason) => failures.push(format!("{name}: {reason}")),
+        }
+    }
+    let _ = std::fs::remove_file(target);
+    Err(VideoError::Failed(failures.join(" · ")))
+}
+
 fn run(mut command: Command) -> Result<(), String> {
     command.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
     #[cfg(windows)]
@@ -191,5 +230,31 @@ mod tests {
         assert_eq!(converted(&source, &cache), Some(copy.clone()));
         assert!(!copy.with_extension("part.mp4").exists());
         eprintln!("copia: {}", copy.display());
+    }
+
+    /// Con ffmpeg instalado: el audio de un mp4 sale como .m4a que se puede leer. Sin ffmpeg no se prueba.
+    #[test]
+    fn audio_de_un_video() {
+        let Some(ffmpeg) = find_ffmpeg() else { return };
+        let dir = std::env::temp_dir().join(format!("emetpro-audio-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let video = dir.join("clip.mp4");
+        let made = Command::new(ffmpeg)
+            .args(["-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=duration=2:size=160x90:rate=10"])
+            .args(["-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-c:v", "libx264", "-c:a", "aac", "-shortest"])
+            .arg(&video)
+            .status();
+        if !made.is_ok_and(|s| s.success()) {
+            return;
+        }
+        let audio = dir.join("clip.m4a");
+        assert!(extract_audio(&video, &audio).is_ok());
+        assert!(std::fs::metadata(&audio).unwrap().len() > 1000);
+        // Un archivo que no es un video falla con el motivo, sin dejar nada a medias.
+        std::fs::write(dir.join("roto.mp4"), b"no es un video").unwrap();
+        let broken = dir.join("roto.m4a");
+        assert!(matches!(extract_audio(&dir.join("roto.mp4"), &broken), Err(VideoError::Failed(_))));
+        assert!(!broken.exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
