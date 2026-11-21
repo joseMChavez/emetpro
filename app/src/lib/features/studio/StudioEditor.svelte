@@ -26,7 +26,12 @@
   } = $props();
 
   // Los campos que una canción más vieja no traiga empiezan vacíos.
-  let song = $state<MediaSong>(untrack(() => ({ reference: "", ...(structuredClone($state.snapshot(initial)) as MediaSong) })));
+  let song = $state<MediaSong>(
+    untrack(() => {
+      const copy = structuredClone($state.snapshot(initial)) as MediaSong;
+      return { ...copy, reference: copy.reference ?? "" };
+    }),
+  );
   let issues = $state<SongIssue[] | null>(null);
   let saving = $state(false);
   let pasteOpen = $state(untrack(() => initial.sections.length === 0));
