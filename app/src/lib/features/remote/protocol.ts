@@ -31,7 +31,9 @@ export type RemoteCommand =
   /** Dejar de fondo, más suave, la canción que sigue sonando tras poner otra cosa en pantalla. */
   | { type: "trackBackground" }
   /** Saltar a una sección de la canción en pantalla (la pista la sigue). */
-  | { type: "studioSection"; id: string };
+  | { type: "studioSection"; id: string }
+  /** El tono de la canción que suena (semitonos, de −6 a +6). */
+  | { type: "trackTone"; semitones: number };
 
 /** Algo que se puede volver a poner en pantalla desde el teléfono: lo preparado en la consola o lo reciente. */
 export interface RemoteItem {
@@ -99,6 +101,8 @@ export interface RemoteStudio {
   /** Terminando con el fundido. */
   finishing: boolean;
   loop: boolean;
+  /** El tono con que suena (semitonos; 0 = el original). */
+  transpose?: number;
   sections: { id: string; name: string; current: boolean }[];
   /**
    * Se puso otra cosa en pantalla y la canción sigue sonando: su título. `asking`: todavía no se eligió entre

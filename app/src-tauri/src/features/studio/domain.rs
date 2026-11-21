@@ -158,7 +158,17 @@ pub struct MediaSong {
     pub background: Option<String>,
     #[serde(default)]
     pub animation: Option<TextAnimation>,
+    /// Semitonos de más o de menos al sonar (el tono para la voz de quien dirige); 0 = el original.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub transpose: i8,
 }
+
+fn is_zero(n: &i8) -> bool {
+    *n == 0
+}
+
+/// Más que esto, el cambio de tono se oye artificial.
+pub const TRANSPOSE_MAX: i8 = 6;
 
 // ---- Validación ----
 
@@ -178,6 +188,8 @@ pub enum IssueCode {
     MissingTitle,
     /// El enlace de referencia no es una dirección web (http o https).
     InvalidReference,
+    /// El tono va más allá de ±TRANSPOSE_MAX semitonos.
+    InvalidTranspose,
     MissingId,
     DuplicateId,
     EmptyOrder,
@@ -312,6 +324,9 @@ impl MediaSong {
         }
         if !self.reference.trim().is_empty() && !is_web_link(&self.reference) {
             issues.add(IssueCode::InvalidReference, Location::default());
+        }
+        if self.transpose.abs() > TRANSPOSE_MAX {
+            issues.add(IssueCode::InvalidTranspose, Location::default());
         }
         let mut ids = HashSet::new();
         let mut check_id = |id: &str, at: Location, issues: &mut Issues| {
@@ -561,6 +576,7 @@ mod tests {
             reference: String::new(),
             background: None,
             animation: None,
+            transpose: 0,
         }
     }
 
@@ -647,6 +663,21 @@ mod tests {
         let mut song = sample();
         song.order[4].timing = timing(100_000, vec![]);
         assert_eq!(codes(&song), vec![IssueCode::TimeOutOfTrack]);
+    }
+
+    #[test]
+    fn tono_entre_menos_seis_y_seis() {
+        let mut song = sample();
+        song.transpose = -6;
+        assert_eq!(codes(&song), vec![]);
+        song.transpose = 7;
+        assert_eq!(codes(&song), vec![IssueCode::InvalidTranspose]);
+        // Se guarda solo si no es el original; una canción sin el campo es el original.
+        song.transpose = 0;
+        assert!(!serde_json::to_string(&song).unwrap().contains("transpose"));
+        song.transpose = -2;
+        let back: MediaSong = serde_json::from_str(&serde_json::to_string(&song).unwrap()).unwrap();
+        assert_eq!(back.transpose, -2);
     }
 
     #[test]

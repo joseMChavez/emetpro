@@ -10,6 +10,7 @@
   import { issuePlace, issueText, kindName, sectionName } from "./names";
   import BackgroundField from "./BackgroundField.svelte";
   import Waveform, { type Mark } from "./Waveform.svelte";
+  import ToneControl from "./ToneControl.svelte";
   import { parseLyrics } from "./parse";
   import { dropTroubledTimings, expand, hasTroubledTimings, newId, sectionOf, sectionText, SECTION_KINDS, slideText, studioContent, withText } from "./song";
   import { clearEntry, clearStart, clearWords, distributeSlides, entryHeads, formatTime, markInSequence, markSection, markStart, markWord, slideAt, slideStarts, slideWords, wordsInSlide } from "./timeline";
@@ -144,7 +145,15 @@
     if (ownTrack && player.status === "ready") return true;
     const duration = await player.load(song.audio.path);
     if (duration !== null && duration !== song.audio.durationMs) song.audio.durationMs = duration;
+    if (duration !== null) player.setTranspose(song.transpose ?? 0);
     return duration !== null;
+  }
+
+  /** El tono de la canción: se guarda con ella y, si su pista está cargada, se oye enseguida. */
+  function setTone(semitones: number) {
+    song.transpose = semitones;
+    if (ownTrack) player.setTranspose(semitones);
+    changed();
   }
 
   async function togglePlay() {
@@ -385,6 +394,8 @@
     // La pista del editor se para; la de la canción en pantalla sigue sonando.
     if (ownTrack && onScreen.song?.audio?.path !== player.path) player.pause();
     player.setRate(1);
+    // Fuera del editor, el tono es el de la canción en pantalla (si es esta pista) o el original.
+    if (ownTrack) player.setTranspose(onScreen.song?.audio?.path === player.path ? (onScreen.song?.transpose ?? 0) : 0);
     onclose(saved);
   }
 </script>
@@ -422,6 +433,10 @@
       <button type="button" class="btn" onclick={pickAudio} disabled={liveBusy || picking}>{t(song.audio ? "studio.changeTrack" : "studio.pickTrack")}</button>
       {#if song.audio && song.mode === "live"}<span class="muted small">{t("studio.trackKept")}</span>{/if}
     </div>
+    {#if song.audio}
+      <ToneControl value={song.transpose ?? 0} onchange={setTone} disabled={liveBusy} />
+      <p class="muted small">{t("studio.tone.hint")}</p>
+    {/if}
     {#if picking}<p class="muted small" role="status">{t("studio.preparingTrack")}</p>{/if}
     {#if liveBusy}<p class="muted small">{t("studio.liveBusy")}</p>{/if}
     <div class="row">

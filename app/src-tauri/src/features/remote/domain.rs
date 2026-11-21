@@ -43,6 +43,8 @@ pub enum Command {
     TrackBackground,
     /// Saltar a una sección de la canción en pantalla, por su id.
     StudioSection { id: String },
+    /// El tono de la canción que suena, en semitonos (de −6 a +6; 0 = el original).
+    TrackTone { semitones: i8 },
 }
 
 /// El texto principal o, en la Biblia, la segunda versión.
@@ -73,6 +75,7 @@ impl Command {
             Command::Show { key } => !key.is_empty() && key.len() <= MAX_TEXT,
             Command::PlanItem { id } | Command::StudioSection { id } => !id.is_empty() && id.len() <= MAX_TEXT,
             Command::GoTo { n } => (1..=10_000).contains(n),
+            Command::TrackTone { semitones } => semitones.abs() <= crate::features::studio::domain::TRANSPOSE_MAX,
             Command::ShowSheet { id } => !id.is_empty() && id.len() <= 64,
             // La ventana de salida mide como mucho 600 palabras.
             Command::Mark { from, to, .. } => *from < 1000 && *to < 1000,
@@ -148,6 +151,9 @@ mod tests {
         assert_eq!(Command::parse(r#"{"type":"trackBackground"}"#), Some(Command::TrackBackground));
         assert_eq!(Command::parse(r#"{"type":"studioSection","id":"coro"}"#), Some(Command::StudioSection { id: "coro".into() }));
         assert_eq!(Command::parse(r#"{"type":"studioSection","id":""}"#), None);
+        assert_eq!(Command::parse(r#"{"type":"trackTone","semitones":-2}"#), Some(Command::TrackTone { semitones: -2 }));
+        assert_eq!(Command::parse(r#"{"type":"trackTone","semitones":7}"#), None);
+        assert_eq!(Command::parse(r#"{"type":"trackTone","semitones":300}"#), None);
         assert_eq!(Command::parse(r#"{"type":"goTo","n":0}"#), None);
         assert_eq!(Command::parse(r#"{"type":"goTo","n":-1}"#), None);
         assert_eq!(Command::parse(r#"{"type":"showSheet","id":"h1"}"#), Some(Command::ShowSheet { id: "h1".into() }));
