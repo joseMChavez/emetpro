@@ -499,6 +499,30 @@
             {/if}
           </ol>
         {/if}
+        {#if status.studio}
+          {@const studio = status.studio}
+          <!-- Media Studio (D-029): la pista sigue a lo que se elija aquí o en la consola. -->
+          <div class="studio">
+            {#if studio.playing !== null}
+              <div class="studio-row">
+                <button class="btn primary big play" disabled={connection !== "open"} onclick={() => command({ type: "trackToggle" })}>
+                  {studio.playing ? `⏸ ${t("studio.pause")}` : `▶ ${t("studio.play")}`}
+                </button>
+                <button class="btn" aria-pressed={studio.loop} disabled={connection !== "open"} onclick={() => command({ type: "trackLoop" })}>🔁 {t("studio.loop")}</button>
+                <button class="btn" disabled={connection !== "open" || !studio.playing || studio.finishing} onclick={() => command({ type: "trackFinish" })}>
+                  {studio.finishing ? t("studio.finishing") : t("studio.finish")}
+                </button>
+              </div>
+            {/if}
+            <div class="studio-sections" role="group" aria-label={t("studio.sections")}>
+              {#each studio.sections as section (section.id)}
+                <button class="btn section" aria-pressed={section.current} disabled={connection !== "open"} onclick={() => command({ type: "studioSection", id: section.id })}>
+                  {#if section.current}<span class="dot" aria-hidden="true"></span>{/if}{section.name}
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/if}
         {#if !status.open}<p class="muted small">{t("remote.outputClosed")}</p>{/if}
       {/if}
     </section>
@@ -863,4 +887,12 @@
   }
   .undo .btn { min-height: 40px; }
   .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .studio { display: flex; flex-direction: column; gap: 8px; }
+  .studio-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .studio-row .play { flex: 1; min-width: 140px; min-height: 56px; font-size: 18px; }
+  .studio-row .btn[aria-pressed="true"] { border-color: var(--live); background: var(--live-soft); }
+  .studio-sections { display: flex; flex-wrap: wrap; gap: 6px; }
+  .studio-sections .section { min-height: 48px; padding: 0 14px; gap: 6px; }
+  .studio-sections .section[aria-pressed="true"] { border-color: var(--live); background: var(--live-soft); font-weight: 750; }
+  .studio-sections .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live); }
 </style>

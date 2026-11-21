@@ -671,6 +671,16 @@ const en: Record<MessageKey, string> = {
   "remote.plan": "Plan · {name}",
 
   // Media Studio (D-029)
+  "studio.markBy": "Mark:",
+  "studio.markBy.slides": "Slides",
+  "studio.markBy.words": "Words",
+  "studio.syncHintWords": "Play and press Space as each word is sung (the underlined one). After the last word of a slide it moves to the next. Backspace clears the slide's words to mark it again. On screen, the word being sung gets a soft glow.",
+  "studio.wordsTimed": "Words with timing",
+  "studio.loop": "Repeat section",
+  "studio.loopHint": "When the section ends, the track goes back to its start until you choose another or turn it off (like a band staying on the chorus).",
+  "studio.finish": "Finish",
+  "studio.finishHint": "Fades the music out over a few seconds and pauses, like when the band ends.",
+  "studio.finishing": "Finishing…",
   "plans.studioSong": "Media Studio song",
   "planfile.studio": "Media Studio songs, with their track and backgrounds: {list}",
   "planfile.studioConflicts": "Already on this computer with different content: {list}",

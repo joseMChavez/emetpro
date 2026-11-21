@@ -78,14 +78,28 @@ export type Step =
 
 /** Margen para dar por seguida una diapositiva (un salto que cae un poco antes, el redondeo del reloj). */
 const SLACK = 250;
+/** Repetir una sección salta un poco antes de su final (la pista se acaba sola si era la última). */
+const LOOP_EARLY = 60;
 
 /**
  * Avance mientras suena (modo híbrido). Si la pista sigue dentro de la diapositiva en pantalla, nada. Si acaba de
  * terminarla, la siguiente del orden: donde siga la grabación, o saltando a donde suena esa (orden propio).
  * Si la pista está en otra parte (se movió la barra), la diapositiva que suena ahí.
  */
-export function step(ranges: (Range | null)[], starts: (number | null)[], current: number, ms: number): Step {
+export function step(
+  ranges: (Range | null)[],
+  starts: (number | null)[],
+  current: number,
+  ms: number,
+  /** Repetir esta aparición: al terminar su última diapositiva, vuelve a la primera. */
+  loop: { first: number; last: number } | null = null,
+): Step {
   const range = ranges[current];
+  // Repetir: un poco antes del final, para que el salto caiga a tiempo aunque sea la última de la pista.
+  if (loop && range && current === loop.last && ms >= range.end - LOOP_EARLY && ms < range.end + 4 * SLACK) {
+    const first = ranges[loop.first];
+    if (first) return { kind: "show", index: loop.first, seek: first.start };
+  }
   if (range && ms >= range.start - SLACK && ms < range.end) return { kind: "stay" };
   if (range && ms >= range.end && ms < range.end + 4 * SLACK) {
     const next = current + 1;
@@ -175,6 +189,104 @@ export function markInSequence(song: MediaSong, expanded: Expanded[], k: number,
 /** Las mismas diapositivas desplegadas, con las apariciones (y sus tiempos) de la canción cambiada. */
 function expand2(song: MediaSong, expanded: Expanded[]): Expanded[] {
   return expanded.map((e) => ({ ...e, entry: song.order[e.entryIndex] }));
+}
+
+// ---- Palabra por palabra ----
+
+/** Palabras de una línea: cada tramo sin espacios, como las marcas (D-023). */
+export function wordsIn(line: string): number {
+  return line.split(/\s+/).filter(Boolean).length;
+}
+
+/** Palabras de una diapositiva, contando todas sus líneas. */
+export function wordsInSlide(lines: string[]): number {
+  return lines.reduce((total, line) => total + wordsIn(line), 0);
+}
+
+/** La palabra w de la diapositiva (contando todas sus líneas) → su línea y su número dentro de ella. */
+function wordPlace(lines: string[], w: number): { line: number; word: number } | null {
+  let rest = w;
+  for (let line = 0; line < lines.length; line++) {
+    const count = wordsIn(lines[line]);
+    if (rest < count) return { line, word: rest };
+    rest -= count;
+  }
+  return null;
+}
+
+/**
+ * Marca que la palabra w (de toda la diapositiva) de la diapositiva desplegada k empieza en ms. La primera
+ * palabra marca también la diapositiva, y la primera de cada línea, la línea. Volver a marcar una palabra quita
+ * las marcas de las que venían después en la diapositiva (seguir marcando desde aquí).
+ */
+export function markWord(song: MediaSong, expanded: Expanded[], k: number, w: number, ms: number): MediaSong {
+  const e = expanded[k];
+  if (!e?.slide) return song;
+  const place = wordPlace(e.slide.lines, w);
+  if (!place) return song;
+  ms = Math.max(0, Math.round(ms));
+  let next = w === 0 ? markInSequence(song, expanded, k, ms) : song;
+  const entry = next.order[e.entryIndex];
+  const cue = entry.timing?.slides.find((c) => c.slide === e.slide!.id);
+  if (!entry.timing || !cue) return next;
+  const lines = (cue.lines ?? []).slice(0, place.line + 1).map((l) => ({ ...l, words: [...(l.words ?? [])] }));
+  // Líneas anteriores sin marcar (se marcó desde la mitad): empiezan con esta palabra, sin palabras propias.
+  while (lines.length <= place.line) lines.push({ startMs: ms, words: [] });
+  const line = lines[place.line];
+  if (place.word === 0) line.startMs = ms;
+  line.words = [...line.words.slice(0, place.word), ms];
+  // Un hueco (palabras de antes sin marcar) se rellena con esta marca para que el orden siga valiendo.
+  for (let i = 0; i < place.word; i++) line.words[i] ??= ms;
+  delete line.endMs;
+  const slides = entry.timing.slides.map((c) => (c === cue ? { ...c, lines } : c));
+  const order = next.order.map((o, i) => (i === e.entryIndex ? { ...o, timing: { ...entry.timing!, slides } } : o));
+  next = { ...next, order };
+  return next;
+}
+
+/** Quita las marcas de palabras de la diapositiva desplegada k (deja la de la diapositiva). */
+export function clearWords(song: MediaSong, expanded: Expanded[], k: number): MediaSong {
+  const e = expanded[k];
+  const entry = e && song.order[e.entryIndex];
+  if (!e?.slide || !entry?.timing) return song;
+  const slides = entry.timing.slides.map((c) => (c.slide === e.slide!.id ? { slide: c.slide, startMs: c.startMs } : c));
+  return { ...song, order: song.order.map((o, i) => (i === e.entryIndex ? { ...o, timing: { ...entry.timing!, slides } } : o)) };
+}
+
+/**
+ * Cuándo empieza cada palabra de cada diapositiva desplegada (todas sus líneas seguidas, como las numera la
+ * salida), para iluminar la que suena. Una aparición sin tiempos propios usa los de otra vez que suena su sección.
+ * null si la diapositiva no tiene palabras marcadas.
+ */
+export function slideWords(expanded: Expanded[]): ((number | null)[] | null)[] {
+  const cueOf = (i: number) => {
+    const e = expanded[i];
+    return e.slide ? e.entry.timing?.slides.find((c) => c.slide === e.slide!.id && c.lines?.some((l) => l.words?.length)) : undefined;
+  };
+  return expanded.map((e, i) => {
+    if (!e.slide) return null;
+    // La propia; si no, la de otra vez que suena (la más cercana antes; si no, la primera después).
+    const same = expanded.map((x, j) => j).filter((j) => j !== i && expanded[j].slide?.id === e.slide!.id);
+    const source = [i, ...same.filter((j) => j < i).reverse(), ...same.filter((j) => j > i)].find((j) => cueOf(j));
+    const cue = source === undefined ? undefined : cueOf(source);
+    if (!cue) return null;
+    const out: (number | null)[] = [];
+    e.slide.lines.forEach((text, li) => {
+      const words = cue.lines?.[li]?.words ?? [];
+      for (let wi = 0; wi < wordsIn(text); wi++) out.push(words[wi] ?? null);
+    });
+    return out.some((w) => w !== null) ? out : null;
+  });
+}
+
+/** La palabra que suena en ese instante: la última que ya empezó. null antes de la primera. */
+export function activeWord(words: (number | null)[] | null | undefined, ms: number): number | null {
+  if (!words) return null;
+  let found: number | null = null;
+  words.forEach((start, w) => {
+    if (start !== null && start <= ms) found = w;
+  });
+  return found;
 }
 
 export function formatTime(ms: number): string {

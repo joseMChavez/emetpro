@@ -2,7 +2,8 @@
   import { onMount } from "svelte";
   import OutputView, { backgroundColor, DEFAULT_STYLE } from "$lib/features/output/OutputView.svelte";
   import { layerKey, type ScreenLayout, type ScreenWord } from "$lib/features/remote/board";
-  import { platform, type OutputContent, type OutputStyle } from "$lib/platform";
+  import { platform, type OutputContent, type OutputStyle, type StudioTime } from "$lib/platform";
+  import { activeWord } from "$lib/features/studio/timeline";
   import { t } from "$lib/i18n/index.svelte";
 
   let content = $state<OutputContent>({ kind: "empty" });
@@ -22,6 +23,33 @@
     event.preventDefault();
     platform.outputNavigate(forward).catch(() => {});
   }
+
+  // ---- Media Studio (D-029): la palabra que suena ----
+  // La consola avisa por dónde va la pista (al reproducir, pausar o saltar, y cada segundo); entre avisos, la
+  // posición se cuenta aquí con el reloj de esta ventana, en cada cuadro y solo mientras suena.
+  let studioTime = $state<(StudioTime & { at: number }) | null>(null);
+  let word = $state<number | null>(null);
+  let frame = 0;
+
+  function trackWord() {
+    cancelAnimationFrame(frame);
+    const time = studioTime;
+    const words = content.kind === "text" && content.studio === time?.song ? content.words?.[content.index] : null;
+    if (!time || !words) {
+      word = null;
+      return;
+    }
+    const ms = time.ms + (time.playing ? performance.now() - time.at : 0);
+    word = activeWord(words, ms);
+    if (time.playing) frame = requestAnimationFrame(trackWord);
+  }
+
+  $effect(() => {
+    void content;
+    void studioTime;
+    trackWord();
+    return () => cancelAnimationFrame(frame);
+  });
 
   let lastScreen = "";
 
@@ -54,14 +82,18 @@
     };
     platform.getOutputState().then(apply);
     const unlisten = platform.onOutputState(apply);
-    return () => unlisten.then((fn) => fn());
+    const unlistenStudio = platform.onStudioTime((time) => (studioTime = { ...time, at: performance.now() }));
+    return () => {
+      unlisten.then((fn) => fn());
+      unlistenStudio.then((fn) => fn());
+    };
   });
 </script>
 
 <svelte:window onresize={measure} onkeydown={onKeydown} />
 
 <div class="output">
-  <OutputView {content} {style} animated diagnostics={size} onerror={(message) => platform.reportOutputError(message)} onscreen={reportScreen} onvideotime={(time) => platform.reportVideoTime(time).catch(() => {})} />
+  <OutputView {content} {style} {word} animated diagnostics={size} onerror={(message) => platform.reportOutputError(message)} onscreen={reportScreen} onvideotime={(time) => platform.reportVideoTime(time).catch(() => {})} />
 </div>
 
 <style>

@@ -671,6 +671,16 @@ const it: Record<MessageKey, string> = {
   "remote.plan": "Piano · {name}",
 
   // Media Studio (D-029)
+  "studio.markBy": "Segna:",
+  "studio.markBy.slides": "Diapositive",
+  "studio.markBy.words": "Parole",
+  "studio.syncHintWords": "Riproduci e premi Spazio quando si canta ogni parola (quella sottolineata). Finite le parole di una diapositiva passa alla successiva. Backspace cancella le parole della diapositiva per segnarla di nuovo. Sullo schermo, la parola cantata ha un'ombra leggera.",
+  "studio.wordsTimed": "Parole con tempo",
+  "studio.loop": "Ripeti sezione",
+  "studio.loopHint": "Alla fine della sezione, la traccia torna all'inizio finché non ne scegli un'altra o la disattivi (come una band che resta sul ritornello).",
+  "studio.finish": "Termina",
+  "studio.finishHint": "Abbassa la musica piano in pochi secondi e mette in pausa, come quando la band finisce.",
+  "studio.finishing": "Terminando…",
   "plans.studioSong": "Brano di Media Studio",
   "planfile.studio": "Brani di Media Studio, con traccia e sfondi: {list}",
   "planfile.studioConflicts": "Già su questo computer con altro contenuto: {list}",

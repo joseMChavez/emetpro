@@ -37,6 +37,8 @@ export type OutputContent =
       studio?: string | null;
       /** Fondo propio de cada diapositiva (el de su sección en Media Studio); null = `background`. */
       backgrounds?: (string | null)[];
+      /** Media Studio: cuándo empieza (ms de la pista) cada palabra de cada diapositiva; null = sin marcar. */
+      words?: ((number | null)[] | null)[];
     }
   | { kind: "image"; path: string }
   | {
@@ -474,6 +476,13 @@ export interface PlayableVideo {
   converted: boolean;
 }
 
+/** Por dónde va la pista de la canción de Media Studio en pantalla (D-029), de la consola a la salida. */
+export interface StudioTime {
+  song: string;
+  ms: number;
+  playing: boolean;
+}
+
 export interface VideoTime {
   path: string;
   time: number;
@@ -546,6 +555,9 @@ export interface Platform {
   onOutputNavigate(handler: (forward: boolean) => void): Promise<() => void>;
   /** La ventana de salida avisa por dónde va el video, para que la consola lo siga en su vista. */
   reportVideoTime(time: VideoTime): Promise<void>;
+  /** La consola avisa por dónde va la pista de Media Studio, para que la salida ilumine la palabra que suena. */
+  reportStudioTime(time: StudioTime): Promise<void>;
+  onStudioTime(handler: (time: StudioTime) => void): Promise<() => void>;
   onVideoTime(handler: (time: VideoTime) => void): Promise<() => void>;
   listBibles(): Promise<BibleInfo[]>;
   /** Abre el selector de archivos XML; devuelve las Biblias importadas ([] si se cancela). */

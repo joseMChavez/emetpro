@@ -11,7 +11,7 @@
   import BackgroundField from "./BackgroundField.svelte";
   import { parseLyrics } from "./parse";
   import { dropTroubledTimings, expand, hasTroubledTimings, newId, sectionOf, sectionText, SECTION_KINDS, slideText, studioContent, withText } from "./song";
-  import { clearStart, formatTime, markInSequence, markStart, slideAt, slideStarts } from "./timeline";
+  import { clearStart, clearWords, formatTime, markInSequence, markStart, markWord, slideAt, slideStarts, slideWords, wordsInSlide } from "./timeline";
 
   let {
     initial,
@@ -42,9 +42,15 @@
   let drafts = $state<Record<string, string>>({});
   /** La siguiente diapositiva desplegada que se marcará con Espacio. */
   let next = $state(0);
+  /** Marcar palabra por palabra (para iluminar la que suena) en vez de solo diapositivas. */
+  let byWord = $state(false);
+  /** En modo palabra: la siguiente palabra de la diapositiva `next`. */
+  let nextWord = $state(0);
 
   let expanded = $derived(expand(song));
   let starts = $derived(slideStarts(expanded));
+  /** Cuántas palabras de cada diapositiva tienen su tiempo. */
+  let timedWords = $derived(slideWords(expanded).map((w) => (w ? w.filter((x) => x !== null).length : 0)));
   let playingRow = $derived(syncOpen ? slideAt(starts, player.positionMs) : null);
   let errors = $derived(issues?.filter((i) => i.severity === "error") ?? []);
   let ownTrack = $derived(song.audio !== null && player.path === song.audio.path);
@@ -197,14 +203,32 @@
 
   function mark() {
     if (!ownTrack || next >= expanded.length) return;
-    const updated = markInSequence(snapshot(), expanded, next, player.now());
-    song.order = updated.order;
-    next++;
+    const slide = expanded[next].slide;
+    if (byWord && slide && wordsInSlide(slide.lines) > 0) {
+      song.order = markWord(snapshot(), expanded, next, nextWord, player.now()).order;
+      nextWord++;
+      if (nextWord >= wordsInSlide(slide.lines)) {
+        next++;
+        nextWord = 0;
+      }
+    } else {
+      song.order = markInSequence(snapshot(), expanded, next, player.now()).order;
+      next++;
+      nextWord = 0;
+    }
     issues = null;
     dirty = true;
   }
 
   function unmark() {
+    // Por palabra, a mitad de una diapositiva: se borran sus palabras para marcarla otra vez desde la primera.
+    if (byWord && nextWord > 0) {
+      song.order = clearWords(snapshot(), expanded, next).order;
+      nextWord = 0;
+      issues = null;
+      dirty = true;
+      return;
+    }
     if (next === 0) return;
     next--;
     song.order = clearStart(snapshot(), expanded, next).order;
@@ -214,6 +238,7 @@
 
   async function goRow(k: number) {
     next = k;
+    nextWord = 0;
     const start = starts[k];
     if (start !== null && (await ensureTrack())) player.seek(start);
     preview(k);
@@ -410,7 +435,14 @@
         <button type="button" class="btn ghost small-btn" onclick={toggleSync} aria-expanded={syncOpen}>{t(syncOpen ? "studio.syncClose" : "studio.syncOpen")}</button>
       </div>
       {#if syncOpen}
-        <p class="muted small">{t("studio.syncHint")}</p>
+        <div class="row">
+          <span class="label">{t("studio.markBy")}</span>
+          <div class="segmented" role="group">
+            <button type="button" aria-pressed={!byWord} onclick={() => ((byWord = false), (nextWord = 0))}>{t("studio.markBy.slides")}</button>
+            <button type="button" aria-pressed={byWord} onclick={() => ((byWord = true), (nextWord = 0))}>{t("studio.markBy.words")}</button>
+          </div>
+        </div>
+        <p class="muted small">{t(byWord ? "studio.syncHintWords" : "studio.syncHint")}</p>
         <div class="row transport">
           <button type="button" class="btn primary" onclick={togglePlay} disabled={liveBusy || (ownTrack && player.status === "loading")}>
             {ownTrack && player.playing ? `⏸ ${t("studio.pause")}` : `▶ ${t("studio.play")}`}
@@ -427,8 +459,14 @@
                 <span class="when">{starts[k] === null ? "—" : formatTime(starts[k]!)}</span>
                 <span class="what">
                   <strong>{sectionName(song, e.section)}</strong>
-                  <span class="muted">{e.slide ? slideText(e.slide).split("\n")[0] : t("studio.instrumental")}</span>
+                  {#if byWord && next === k && e.slide}
+                    <!-- La letra entera, con la palabra que toca marcar destacada. -->
+                    <span class="words">{#each e.slide.lines.join(" ").split(/\s+/).filter(Boolean) as w, wi (wi)}<span class:target={wi === nextWord} class:done={wi < nextWord}>{w}</span>{" "}{/each}</span>
+                  {:else}
+                    <span class="muted">{e.slide ? slideText(e.slide).split("\n")[0] : t("studio.instrumental")}</span>
+                  {/if}
                 </span>
+                {#if e.slide && timedWords[k] > 0}<span class="badge-words" title={t("studio.wordsTimed")}>{timedWords[k]}/{wordsInSlide(e.slide.lines)}</span>{/if}
                 {#if next === k}<span class="tag">{t("studio.nextTag")}</span>{/if}
               </button>
               <button type="button" class="mini" onclick={() => nudge(k, -100)} disabled={starts[k] === null} aria-label={t("studio.earlier")}>−0,1</button>
@@ -515,6 +553,10 @@
   .when { flex: none; width: 5em; font-variant-numeric: tabular-nums; color: var(--muted); }
   .what { flex: 1; min-width: 0; display: flex; gap: 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .what .muted { overflow: hidden; text-overflow: ellipsis; }
+  .words { white-space: normal; line-height: 1.5; }
+  .words .done { color: var(--muted); }
+  .words .target { font-weight: 800; text-decoration: underline; text-decoration-color: var(--accent); text-decoration-thickness: 3px; }
+  .badge-words { flex: none; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); }
   .tag { flex: none; font-size: 12px; font-weight: 700; padding: 1px 6px; border-radius: 5px; background: var(--accent-soft); color: var(--accent); }
   .issues { padding: 8px 10px; border-radius: 8px; background: var(--surface-2); }
   .issues ul { margin: 4px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }

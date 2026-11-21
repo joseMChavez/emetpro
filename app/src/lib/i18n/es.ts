@@ -670,6 +670,16 @@ const es = {
   "remote.plan": "Plan · {name}",
 
   // Media Studio (D-029)
+  "studio.markBy": "Marcar:",
+  "studio.markBy.slides": "Diapositivas",
+  "studio.markBy.words": "Palabras",
+  "studio.syncHintWords": "Reproduce y pulsa Espacio cuando se canta cada palabra (la subrayada). Al terminar las palabras de una diapositiva sigue con la siguiente. Retroceso borra las palabras de la diapositiva para marcarla otra vez. En pantalla, la palabra que suena lleva una sombra suave.",
+  "studio.wordsTimed": "Palabras con tiempo",
+  "studio.loop": "Repetir sección",
+  "studio.loopHint": "Al terminar la sección, la pista vuelve a su comienzo hasta que elijas otra o lo quites (como una banda que se queda en el coro).",
+  "studio.finish": "Terminar",
+  "studio.finishHint": "Baja la música despacio en unos segundos y queda en pausa, como cuando la banda termina.",
+  "studio.finishing": "Terminando…",
   "plans.studioSong": "Canción de Media Studio",
   "planfile.studio": "Canciones de Media Studio, con su pista y sus fondos: {list}",
   "planfile.studioConflicts": "Ya están en esta computadora con otro contenido: {list}",

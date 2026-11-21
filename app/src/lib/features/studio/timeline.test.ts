@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MediaSong } from "$lib/platform/types";
 import { dropTroubledTimings, emptySong, expand, hasTroubledTimings, sectionText, studioContent, withText } from "./song";
-import { clearStart, formatTime, markInSequence, markStart, nextStart, slideAt, slideRanges, slideStarts, step } from "./timeline";
+import { activeWord, clearStart, clearWords, formatTime, markInSequence, markStart, markWord, nextStart, slideAt, slideRanges, slideStarts, slideWords, step, wordsInSlide } from "./timeline";
 
 function song(): MediaSong {
   return {
@@ -206,5 +206,62 @@ describe("sincronizar sin dejar errores", () => {
     // Los avisos no se tocan.
     expect(clean.order[1]).toBe(s.order[1]);
     expect(hasTroubledTimings([{ code: "missingTitle", severity: "error", at: {} }])).toBe(false);
+  });
+});
+
+describe("palabra por palabra", () => {
+  // La estrofa tiene una línea de dos palabras: «Sublime gracia». El coro: «Gloria» y «Amén».
+  it("marcar cada palabra: la primera marca también la diapositiva; las palabras quedan en su línea", () => {
+    let s = song();
+    s.sections[1].slides[0].lines = ["Sublime gracia", "del Señor"];
+    expect(wordsInSlide(s.sections[1].slides[0].lines)).toBe(4);
+    for (const [w, ms] of [[0, 8_100], [1, 8_600], [2, 9_400], [3, 9_900]] as const) s = markWord(s, expand(s), 1, w, ms);
+    const cue = s.order[1].timing!.slides[0];
+    expect(cue.startMs).toBe(8_100);
+    expect(cue.lines).toEqual([
+      { startMs: 8_100, words: [8_100, 8_600] },
+      { startMs: 9_400, words: [9_400, 9_900] },
+    ]);
+    expect(slideWords(expand(s))[1]).toEqual([8_100, 8_600, 9_400, 9_900]);
+    // Volver a marcar la segunda palabra quita las que venían después.
+    s = markWord(s, expand(s), 1, 1, 8_700);
+    expect(slideWords(expand(s))[1]).toEqual([8_100, 8_700, null, null]);
+    // Borrar las palabras deja la diapositiva marcada.
+    s = clearWords(s, expand(s), 1);
+    expect(s.order[1].timing!.slides[0]).toEqual({ slide: "v1a", startMs: 8_100 });
+    expect(slideWords(expand(s))[1]).toBeNull();
+  });
+
+  it("la palabra que suena es la última que empezó", () => {
+    const words = [1_000, 1_500, null, 2_500];
+    expect(activeWord(words, 999)).toBeNull();
+    expect(activeWord(words, 1_000)).toBe(0);
+    expect(activeWord(words, 2_000)).toBe(1);
+    expect(activeWord(words, 3_000)).toBe(3);
+    expect(activeWord(null, 3_000)).toBeNull();
+  });
+
+  it("un coro repetido sin palabras propias usa las de la otra vez", () => {
+    let s = song();
+    s = markWord(s, expand(s), 2, 0, 20_000);
+    expect(slideWords(expand(s))[2]).toEqual([20_000]);
+    // El segundo coro (índice 4) no tiene palabras propias: usa las del primero (la pista salta allí).
+    expect(slideWords(expand(s))[4]).toEqual([20_000]);
+  });
+});
+
+describe("repetir una sección", () => {
+  it("al terminar la última diapositiva de la sección, vuelve a su primera", () => {
+    const s = song();
+    const r = slideRanges(expand(s), 100_000);
+    const st = slideStarts(expand(s));
+    // El primer coro: diapositivas 2 (20-30 s) y 3 (30-60 s).
+    const loop = { first: 2, last: 3 };
+    expect(step(r, st, 3, 45_000, loop)).toEqual({ kind: "stay" });
+    expect(step(r, st, 3, 59_950, loop)).toEqual({ kind: "show", index: 2, seek: 20_000 });
+    // Sin repetir, sigue con la siguiente.
+    expect(step(r, st, 3, 60_000)).toEqual({ kind: "show", index: 4 });
+    // En la primera diapositiva de la sección no se repite todavía.
+    expect(step(r, st, 2, 29_990, loop)).toEqual({ kind: "stay" });
   });
 });

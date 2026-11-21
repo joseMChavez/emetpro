@@ -134,6 +134,9 @@ pub enum OutputContent {
         /// Fondo propio de cada diapositiva (el de su sección en Media Studio); None = `background`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         backgrounds: Option<Vec<Option<String>>>,
+        /// Media Studio: cuándo empieza (ms de la pista) cada palabra de cada diapositiva, para iluminar la que suena.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        words: Option<Vec<Option<Vec<Option<u32>>>>>,
     },
     Image {
         path: String,

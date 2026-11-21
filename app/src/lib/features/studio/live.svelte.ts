@@ -2,10 +2,10 @@
 // Modo híbrido: mientras suena, la diapositiva sale del tiempo de la pista. Si el operador elige otra, la pista salta
 // a su comienzo y sigue sonando o en pausa como estaba (seek-preserve), y el avance automático sigue desde ahí.
 // En directo no hay pista: la consola avanza como con cualquier letra.
-import type { MediaSong, OutputContent } from "$lib/platform";
+import { platform, type MediaSong, type OutputContent } from "$lib/platform";
 import { player } from "./player.svelte";
 import { expand, type Expanded } from "./song";
-import { nextStart, slideRanges, slideStarts, step, type Range } from "./timeline";
+import { activeWord, nextStart, slideRanges, slideStarts, step, type Range } from "./timeline";
 import { studio } from "./library.svelte";
 
 export const onScreen = $state({
@@ -13,7 +13,18 @@ export const onScreen = $state({
   song: null as MediaSong | null,
   /** La diapositiva en pantalla (desde 0). */
   index: 0,
+  /** Repetir la sección en pantalla: al terminarla, la pista vuelve a su comienzo (una banda que se queda en el
+   *  coro mientras se ora). Se quita al elegir otra diapositiva o sección. */
+  loop: false,
 });
+
+/** Canción recién enviada a pantalla: al llegar, su pista empieza a sonar (como un video). */
+let autoplay: string | null = null;
+
+/** La consola va a enviar esta canción a pantalla: que suene al llegar. */
+export function armAutoplay(content: OutputContent) {
+  autoplay = content.kind === "text" && content.studio ? content.studio : null;
+}
 
 let expanded: Expanded[] = [];
 /** Comienzos propios de cada diapositiva desplegada (para saber cuál suena en un instante). */
@@ -64,9 +75,21 @@ export function follow(content: OutputContent) {
   }
   if (content.index !== onScreen.index && !pending) cursor = content.index;
   onScreen.index = content.index;
-  if (!changed || !hasTrack(song)) return;
+  const play = autoplay !== null && autoplay === song?.id;
+  if (play) autoplay = null;
+  if (!hasTrack(song)) return;
+  // La misma canción enviada otra vez (en pausa o ya terminada): suena desde la diapositiva enviada.
+  if (!changed) {
+    if (play && trackReady() && !player.playing) {
+      cursor = content.index;
+      player.seek(ranges[content.index]?.start ?? 0);
+      player.play();
+    }
+    return;
+  }
   hold = null;
   pending = false;
+  onScreen.loop = false;
   cursor = content.index;
   // Si ya sonaba esta misma pista (se volvió a enviar), no se toca.
   if (player.path === song.audio.path && player.playing) return;
@@ -74,6 +97,8 @@ export function follow(content: OutputContent) {
   player.load(song.audio.path).then((duration) => {
     if (duration === null || onScreen.song?.id !== song.id) return;
     player.seek(ranges[index]?.start ?? 0);
+    // Enviada a pantalla: empieza a sonar sola, como un video. Restaurada al abrir la consola, no.
+    if (play) player.play();
   });
 }
 
@@ -83,6 +108,8 @@ export function goTo(content: OutputContent, n: number): boolean {
   const i = n - 1;
   if (i < 0 || i >= expanded.length) return true;
   const range = ranges[i];
+  // Elegir otra cosa es salir de la repetición.
+  if (expanded[i]?.entryIndex !== expanded[cursor]?.entryIndex) onScreen.loop = false;
   display(i);
   // La pista salta a donde suena esa diapositiva (sus tiempos o los de otra vez que suena su sección).
   if (range) {
@@ -92,6 +119,27 @@ export function goTo(content: OutputContent, n: number): boolean {
     hold = { until: nextStart(starts, player.now()) };
   }
   return true;
+}
+
+/** Primera y última diapositiva desplegada de la aparición de la diapositiva i. */
+function occurrence(i: number): { first: number; last: number } | null {
+  const entry = expanded[i]?.entryIndex;
+  if (entry === undefined) return null;
+  const first = expanded.findIndex((e) => e.entryIndex === entry);
+  let last = first;
+  while (expanded[last + 1]?.entryIndex === entry) last++;
+  return { first, last };
+}
+
+/** Terminar la canción con el fundido: también deja de repetir. */
+export function finishSong() {
+  onScreen.loop = false;
+  player.finish();
+}
+
+/** Repetir (o dejar de repetir) la sección en pantalla. */
+export function toggleLoop() {
+  onScreen.loop = !onScreen.loop && onScreen.song !== null;
 }
 
 /** La canción en pantalla tiene algún tiempo marcado: si no, la pista suena de corrido y no sigue a la pantalla. */
@@ -130,8 +178,33 @@ function display(i: number) {
   pending = !show?.(i + 1);
 }
 
+/** El último aviso de tiempo a la salida: no se repite mientras la pista vaya por donde se espera. */
+let lastSent = { song: "", ms: -1, playing: false, at: 0 };
+
+/**
+ * Avisa a la salida por dónde va la pista, para iluminar la palabra que suena: al reproducir, pausar o saltar, si
+ * se desvía de lo previsto, y una vez por segundo mientras suena. La salida cuenta el resto con su reloj.
+ */
+function sendTime(ms: number) {
+  const song = onScreen.song;
+  if (!song || !trackReady()) return;
+  const now = performance.now();
+  const expected = lastSent.playing ? lastSent.ms + (now - lastSent.at) : lastSent.ms;
+  const same = lastSent.song === song.id && lastSent.playing === player.playing;
+  if (same && Math.abs(ms - expected) < 120 && now - lastSent.at < 1000) return;
+  lastSent = { song: song.id, ms, playing: player.playing, at: now };
+  platform.reportStudioTime({ song: song.id, ms: Math.round(ms), playing: player.playing }).catch(() => {});
+}
+
+/** La palabra que suena de lo que está en pantalla (para la vista de la consola); null si no hay. */
+export function wordOnScreen(content: OutputContent): number | null {
+  if (content.kind !== "text" || !content.studio || content.studio !== onScreen.song?.id || !trackReady()) return null;
+  return activeWord(content.words?.[content.index], player.positionMs);
+}
+
 /** Cada aviso de la pista mientras suena (cada cuadro, y cada 100 ms aunque la consola esté tapada). */
 function onTime(ms: number) {
+  sendTime(ms);
   if (!show || !player.playing || !trackReady()) return;
   // La consola estaba ocupada enviando: se vuelve a intentar.
   if (pending) pending = !show(cursor + 1);
@@ -139,9 +212,9 @@ function onTime(ms: number) {
     if (hold.until === null || ms < hold.until) return;
     hold = null;
   }
-  const next = step(ranges, starts, cursor, ms);
+  const next = step(ranges, starts, cursor, ms, onScreen.loop ? occurrence(cursor) : null);
   if (next.kind === "stay") return;
   display(next.index);
-  // Orden propio: la siguiente del orden suena en otra parte de la grabación.
-  if (next.seek !== undefined) player.seek(next.seek);
+  // Orden propio o repetir: la siguiente suena en otra parte de la grabación.
+  if (next.seek !== undefined) player.seek(next.seek, true);
 }

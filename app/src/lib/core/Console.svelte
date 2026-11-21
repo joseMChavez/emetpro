@@ -31,7 +31,8 @@
   import { applyMark, clearMarks, type MarkPart } from "$lib/features/marks/marks";
   import { screenKey } from "$lib/features/output/history.svelte";
   import StudioTransport from "$lib/features/studio/StudioTransport.svelte";
-  import { goTo as studioGoTo } from "$lib/features/studio/live.svelte";
+  import { armAutoplay, finishSong, goTo as studioGoTo, sectionTarget, toggleLoop, wordOnScreen } from "$lib/features/studio/live.svelte";
+  import { player as studioPlayer } from "$lib/features/studio/player.svelte";
 
   const MONITOR_POLL_MS = 2000;
   const SETTINGS_ICON = "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z";
@@ -225,6 +226,8 @@
 
   /** «Enviar a pantalla»: si la salida está cerrada, se abre sola en el monitor elegido. */
   const sendPrepared = (content: OutputContent) => run(async () => {
+    // Una canción de Media Studio con pista empieza a sonar al llegar a la pantalla, como un video (D-029).
+    armAutoplay(content);
     if (isTyping(document.activeElement)) (document.activeElement as HTMLElement).blur();
     if (!output.open && selectedIndex !== null) output = await platform.openOutput(selectedIndex);
     // Un temporizador preparado empieza a contar al llegar a la pantalla.
@@ -365,6 +368,15 @@
       // Resaltar palabras va directo, como dibujar (D-023).
       case "mark": return markWords("live", command.part, command.from, command.to, command.style, command.color);
       case "clearMarks": return clearWords("live");
+      // Media Studio (D-029): la pista de la canción en pantalla.
+      case "trackToggle": return studioPlayer.toggle();
+      case "trackLoop": return toggleLoop();
+      case "trackFinish": return finishSong();
+      case "studioSection": {
+        const n = sectionTarget(command.id);
+        if (n !== null) goLive(n);
+        return;
+      }
       case "show": {
         // Lo preparado o algo que estuvo en pantalla (la presentación en la página donde quedó). Ya se confirmó en el teléfono.
         const content = findItem(command.key, prepared);
@@ -459,6 +471,11 @@
     const unlistenVideo = platform.onVideoTime((time) => (videoTime = { ...time, at: performance.now() }));
     const unlistenRemote = platform.onRemoteCommand(onRemoteCommand);
     const stopWatchingClients = watchRemoteClients();
+    // El sistema solo deja sonar audio pedido con un gesto: el primer clic en la consola habilita la pista de
+    // Media Studio para el resto de la sesión (arrancar al enviar, o desde el teléfono).
+    const unlockAudio = () => studioPlayer.unlock();
+    window.addEventListener("pointerdown", unlockAudio, { once: true });
+    window.addEventListener("keydown", unlockAudio, { once: true });
     watchBoard();
     const timer = setInterval(refreshMonitors, MONITOR_POLL_MS);
     return () => {
@@ -668,7 +685,7 @@
       </div>
       <div class="card-body stack" role="tabpanel" id="pane-live" aria-labelledby="tab-live" hidden={stageTab !== "live"}>
         <div class="screen live">
-          <OutputView content={output.content} style={output.style} preview animated={stageTab === "live" && !expanded} playing={stageTab === "live" && !expanded && output.open} follow={videoTime} marking={markTool.on} onmark={(part, from, to) => markWords("live", part, from, to)} onunplayable={(path) => (unplayable = path)} />
+          <OutputView content={output.content} style={output.style} preview animated={stageTab === "live" && !expanded} playing={stageTab === "live" && !expanded && output.open} follow={videoTime} word={wordOnScreen(output.content)} marking={markTool.on} onmark={(part, from, to) => markWords("live", part, from, to)} onunplayable={(path) => (unplayable = path)} />
           <span class="screen-tag live">{output.open ? t("live.badge") : t("live.closedBadge")}</span>
         </div>
         <MarkTools content={output.content} saved={fromPlan(output.content)} onclear={() => clearWords("live")} />

@@ -4,7 +4,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import type { RemoteCommand } from "$lib/features/remote/protocol";
 import type { BoardMessage } from "$lib/features/remote/board";
-import type { OfficeProgress, OutputState, Platform, StoredSettings, VideoTime } from "./types";
+import type { OfficeProgress, OutputState, Platform, StoredSettings, StudioTime, VideoTime } from "./types";
 
 export const tauriPlatform: Platform = {
   listMonitors: () => invoke("plugin:output|list_monitors"),
@@ -37,6 +37,9 @@ export const tauriPlatform: Platform = {
   // De ventana a ventana, sin pasar por el backend: es solo para que la consola vea el video donde va.
   reportVideoTime: (time) => emit("output-video-time", time),
   onVideoTime: (handler) => listen<VideoTime>("output-video-time", (event) => handler(event.payload)),
+  // Igual: de la consola a la salida, sin pasar por el backend; solo al reproducir, pausar o saltar y cada segundo.
+  reportStudioTime: (time) => emit("studio-time", time),
+  onStudioTime: (handler) => listen<StudioTime>("studio-time", (event) => handler(event.payload)),
   listBibles: () => invoke("plugin:bible|list_bibles"),
   importBibles: (title, filterName) => invoke("plugin:bible|import_bibles", { title, filterName }),
   removeBible: (id) => invoke("plugin:bible|remove_bible", { id }),

@@ -94,8 +94,8 @@ pub fn set_output_content(
     let no_sheet = matches!(&content, OutputContent::Board { sheet } if sheet.is_empty() || sheet.len() > 64);
     // Con formato, una diapositiva con formato por cada una de texto.
     let rich_mismatch = matches!(&content, OutputContent::Text { slides, rich: Some(rich), .. } if rich.len() != slides.len());
-    let backgrounds_mismatch =
-        matches!(&content, OutputContent::Text { slides, backgrounds: Some(b), .. } if b.len() != slides.len());
+    let backgrounds_mismatch = matches!(&content, OutputContent::Text { slides, backgrounds: Some(b), .. } if b.len() != slides.len())
+        || matches!(&content, OutputContent::Text { slides, words: Some(w), .. } if w.len() != slides.len());
     if empty_timer || no_sheet || rich_mismatch || backgrounds_mismatch || deck_len.is_some_and(|(len, index)| index >= len) {
         return Err(CommandError::InvalidContent);
     }

@@ -1,6 +1,7 @@
 // Media Studio (D-029): la canción desplegada según su orden y el contenido que va a la pantalla.
 // Puro: sin Svelte ni plataforma, para probarlo con vitest.
 import type { MediaSong, OrderEntry, OutputContent, SectionKind, SongIssue, SongSection, SongSlide } from "$lib/platform/types";
+import { slideWords } from "./timeline";
 
 /** Una diapositiva de la canción en el orden en que se canta. `slide: null` = sección sin diapositivas (instrumental). */
 export interface Expanded {
@@ -39,6 +40,7 @@ export function studioContent(song: MediaSong, credit: string): OutputContent {
   if (slides.length === 0) return { kind: "empty" };
   // El fondo de cada sección, si alguna lo tiene: en pantalla cambia con la sección.
   const backgrounds = expanded.map((e) => e.section.background ?? null);
+  const words = slideWords(expanded);
   return {
     kind: "text",
     slides,
@@ -47,6 +49,8 @@ export function studioContent(song: MediaSong, credit: string): OutputContent {
     background: song.background,
     studio: song.id,
     ...(backgrounds.some((b) => b !== null) ? { backgrounds } : {}),
+    // Cuándo empieza cada palabra (si se marcaron): la salida ilumina la que suena (D-029).
+    ...(song.mode === "track" && words.some((w) => w !== null) ? { words } : {}),
     ...(song.animation ? { animation: { ...song.animation } } : {}),
   };
 }

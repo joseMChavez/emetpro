@@ -4,8 +4,12 @@
 // suena se lee en cada cuadro con requestAnimationFrame, nunca con un setInterval.
 import { platform } from "$lib/platform";
 
-/** Fundido de cada salto, pausa o comienzo, en segundos: lo justo para que no chasquee. */
+/** Fundido de cada salto, en segundos: lo justo para que no chasquee. */
 const FADE = 0.03;
+/** Al reproducir y al pausar: la música entra y sale como con un músico, no de golpe. */
+const SOFT = 0.25;
+/** «Terminar»: el final de la canción baja despacio, como cuando la banda termina. */
+const FINISH = 4;
 
 export type PlayerStatus = "empty" | "loading" | "ready" | "error";
 
@@ -20,7 +24,12 @@ class Player {
   durationMs = $state(0);
   error = $state<string | null>(null);
 
+  /** Terminando con el fundido largo. */
+  finishing = $state(false);
+
   private ctx: AudioContext | null = null;
+  /** Volumen general: los fundidos de reproducir, pausar y terminar (cada trozo tiene el suyo para los saltos). */
+  private master: GainNode | null = null;
   private buffer: AudioBuffer | null = null;
   private source: AudioBufferSourceNode | null = null;
   private gain: GainNode | null = null;
@@ -46,8 +55,7 @@ class Player {
     this.positionMs = 0;
     try {
       const bytes = await platform.studioReadAudio(path);
-      this.ctx ??= new AudioContext();
-      const buffer = await this.ctx.decodeAudioData(bytes);
+      const buffer = await this.context().decodeAudioData(bytes);
       // Mientras se decodificaba se pidió otra pista: esta ya no sirve.
       if (token !== this.loading) return null;
       this.buffer = buffer;
@@ -61,6 +69,25 @@ class Player {
       platform.logError(`media studio: pista ${path}: ${this.error}`).catch(() => {});
       return null;
     }
+  }
+
+  private context(): AudioContext {
+    if (!this.ctx) {
+      this.ctx = new AudioContext();
+      this.master = this.ctx.createGain();
+      this.master.connect(this.ctx.destination);
+    }
+    return this.ctx;
+  }
+
+  /**
+   * Con un clic del operador: el sistema solo deja sonar audio que se pidió con un gesto. Después sigue
+   * habilitado, así la pista puede arrancar sola al enviarla o desde el teléfono.
+   */
+  unlock() {
+    this.context()
+      .resume()
+      .catch(() => {});
   }
 
   /** Deja de sonar y libera la memoria de la pista (unos 80 MB por cada 4 minutos). */
@@ -86,6 +113,7 @@ class Player {
     if (!this.buffer || !this.ctx || this.playing) return;
     if (this.offset * 1000 >= this.durationMs - 50) this.offset = 0;
     await this.ctx.resume();
+    this.ramp(1, SOFT, 0);
     this.startSource(this.offset);
     this.playing = true;
     this.tick();
@@ -95,10 +123,44 @@ class Player {
   pause() {
     if (!this.playing) return;
     this.offset = this.now() / 1000;
-    this.stopSource();
+    this.finishing = false;
+    // Baja en un cuarto de segundo y para: el trozo se detiene cuando ya no se oye.
+    this.ramp(0, SOFT);
+    this.stopSource(SOFT);
     this.playing = false;
     this.positionMs = this.offset * 1000;
     this.emit();
+  }
+
+  /** Termina la canción con un fundido de unos segundos y queda en pausa allí. */
+  finish() {
+    const ctx = this.ctx;
+    if (!ctx || !this.playing || this.finishing) return;
+    this.finishing = true;
+    this.ramp(0, FINISH);
+    // Lo avisa el propio audio al acabar el fundido (un temporizador se frenaría con la consola tapada).
+    const done = ctx.createConstantSource();
+    const silent = ctx.createGain();
+    silent.gain.value = 0;
+    done.connect(silent).connect(ctx.destination);
+    done.onended = () => {
+      done.disconnect();
+      silent.disconnect();
+      if (this.finishing) this.pause();
+    };
+    done.start();
+    done.stop(ctx.currentTime + FINISH);
+  }
+
+  /** El volumen general va a `to` en `seconds`, empezando en `from` si se da. */
+  private ramp(to: number, seconds: number, from?: number) {
+    const ctx = this.ctx;
+    const gain = this.master?.gain;
+    if (!ctx || !gain) return;
+    const at = ctx.currentTime;
+    gain.cancelScheduledValues(at);
+    gain.setValueAtTime(from ?? gain.value, at);
+    gain.linearRampToValueAtTime(to, at + seconds);
   }
 
   toggle() {
@@ -106,11 +168,19 @@ class Player {
     else this.play();
   }
 
-  /** Salta a ms. Si sonaba, sigue sonando desde ahí; si estaba en pausa, sigue en pausa (seek-preserve). */
-  seek(ms: number) {
+  /**
+   * Salta a ms. Si sonaba, sigue sonando desde ahí; si estaba en pausa, sigue en pausa (seek-preserve).
+   * `automatic`: un salto de la propia canción (repetir, orden propio), no del operador.
+   */
+  seek(ms: number, automatic = false) {
     if (!this.buffer) return;
     this.offset = Math.max(0, Math.min(ms, this.durationMs)) / 1000;
     this.positionMs = this.offset * 1000;
+    // Que el operador salte durante el fundido final es seguir cantando: vuelve el volumen.
+    if (this.finishing && !automatic) {
+      this.finishing = false;
+      this.ramp(1, SOFT);
+    }
     if (this.playing) this.startSource(this.offset);
     this.emit();
   }
@@ -185,7 +255,8 @@ class Player {
     this.startedAt = ctx.currentTime;
   }
 
-  private stopSource() {
+  /** Apaga el trozo que suena con un fundido (el de los saltos, o `fade` segundos). */
+  private stopSource(fade = FADE) {
     const source = this.source;
     const gain = this.gain;
     this.source = null;
@@ -194,9 +265,9 @@ class Player {
     const at = this.ctx.currentTime;
     gain.gain.cancelScheduledValues(at);
     gain.gain.setValueAtTime(gain.gain.value, at);
-    gain.gain.linearRampToValueAtTime(0, at + FADE);
+    gain.gain.linearRampToValueAtTime(0, at + fade);
     try {
-      source.stop(at + FADE);
+      source.stop(at + fade);
     } catch {
       // Ya había terminado.
     }

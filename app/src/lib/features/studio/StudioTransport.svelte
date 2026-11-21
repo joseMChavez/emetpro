@@ -5,7 +5,7 @@
   import { t } from "$lib/i18n/index.svelte";
   import type { OutputContent } from "$lib/platform";
   import { studio, loadStudio } from "./library.svelte";
-  import { attach, follow, goTo, onScreen, sectionTarget, sectionsOnScreen, synced, trackReady } from "./live.svelte";
+  import { attach, finishSong, follow, goTo, onScreen, sectionTarget, sectionsOnScreen, synced, toggleLoop, trackReady } from "./live.svelte";
   import { player } from "./player.svelte";
   import { sectionName } from "./names";
   import { sectionOf } from "./song";
@@ -70,6 +70,15 @@
           />
         {/if}
       </div>
+      {#if trackReady()}
+        <div class="transport">
+          <!-- Como una banda que se queda en el coro mientras se ora: al terminar la sección vuelve a su comienzo. -->
+          <button class="btn" aria-pressed={onScreen.loop} onclick={toggleLoop} title={t("studio.loopHint")}>🔁 {t("studio.loop")}</button>
+          <button class="btn" onclick={finishSong} disabled={!player.playing || player.finishing} title={t("studio.finishHint")}>
+            {player.finishing ? t("studio.finishing") : t("studio.finish")}
+          </button>
+        </div>
+      {/if}
       {#if trackReady() && !synced()}
         <!-- Sin tiempos la pista no tiene a dónde saltar: que se note, no que parezca que falla. -->
         <p class="notice small" role="status">{t("studio.notSynced")}</p>
@@ -104,7 +113,7 @@
   .bar { flex: 1; min-width: 160px; accent-color: var(--live); }
   .sections { display: flex; flex-wrap: wrap; gap: 6px; }
   .section { min-height: 44px; padding: 0 14px; gap: 6px; }
-  .section[aria-pressed="true"] { border-color: var(--live); background: var(--live-soft); font-weight: 700; }
+  .section[aria-pressed="true"], .transport .btn[aria-pressed="true"] { border-color: var(--live); background: var(--live-soft); font-weight: 700; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live); }
   .error { color: var(--live); }
   .notice { margin: 0; padding: 6px 10px; border-radius: 8px; background: var(--warn-bg); color: var(--warn-text); }
