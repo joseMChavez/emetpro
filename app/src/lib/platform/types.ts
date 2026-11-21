@@ -33,6 +33,8 @@ export type OutputContent =
       animation?: TextAnimation;
       /** Con formato (D-027): una por diapositiva. `slides` lleva su texto plano, que manda para marcas y teléfono. */
       rich?: RichSlide[];
+      /** Canción de Media Studio de la que salen (D-029): la consola la sigue con su pista. */
+      studio?: string | null;
     }
   | { kind: "image"; path: string }
   | {
@@ -185,6 +187,92 @@ export type ObsTextShown = { kind: "current" } | { kind: "switched"; scene: stri
 export interface ObsCamera {
   id: string;
   name: string;
+}
+
+// ---- Media Studio (D-029; features/studio/domain.rs) ----
+// Tiempos en ms desde el comienzo de la pista; solo comienzos: cada tramo dura hasta que empieza el siguiente.
+
+export type SongMode = "track" | "live";
+export type SectionKind = "intro" | "verse" | "preChorus" | "chorus" | "bridge" | "instrumental" | "interlude" | "tag" | "outro" | "custom";
+
+export interface AudioTrack {
+  path: string;
+  name: string;
+  durationMs: number;
+}
+
+export interface SongRights {
+  composition: string;
+  lyrics: string;
+  recording: string;
+  license: string;
+  notes: string;
+}
+
+export interface SongSlide {
+  id: string;
+  lines: string[];
+}
+
+export interface SongSection {
+  id: string;
+  kind: SectionKind;
+  /** Vacío = el nombre de su tipo. */
+  label: string;
+  slides: SongSlide[];
+}
+
+export interface LineCue {
+  startMs: number;
+  endMs?: number | null;
+  words?: number[];
+}
+
+export interface SlideCue {
+  slide: string;
+  startMs: number;
+  lines?: LineCue[];
+}
+
+export interface Timing {
+  startMs: number;
+  slides: SlideCue[];
+}
+
+export interface OrderEntry {
+  id: string;
+  section: string;
+  timing?: Timing | null;
+}
+
+export interface MediaSong {
+  id: string;
+  title: string;
+  artist: string;
+  mode: SongMode;
+  audio: AudioTrack | null;
+  sections: SongSection[];
+  order: OrderEntry[];
+  rights: SongRights;
+  background: string | null;
+  animation?: TextAnimation | null;
+}
+
+export type IssueCode =
+  | "missingTitle" | "missingId" | "duplicateId" | "emptyOrder" | "unknownSection" | "trackWithoutAudio" | "invalidAudio"
+  | "timeOutOfTrack" | "entriesOutOfOrder" | "unknownSlide" | "duplicateCue" | "slidesOutOfOrder" | "slideOutsideEntry"
+  | "linesOutOfOrder" | "lineOutsideSlide" | "lineEndBeforeStart" | "linesOverlap" | "wordsOutOfOrder" | "wordOutsideLine"
+  | "unusedSection" | "emptySlide" | "untimedEntry" | "untimedSlide" | "extraLineCues" | "extraWordCues";
+
+export interface SongIssue {
+  code: IssueCode;
+  severity: "error" | "warning";
+  at: { entry?: string; section?: string; slide?: string; line?: number; word?: number };
+}
+
+export interface StudioSaveOutcome {
+  saved: boolean;
+  issues: SongIssue[];
 }
 
 /** Letra guardada en la biblioteca. */
@@ -467,6 +555,17 @@ export interface Platform {
   songDelete(id: string): Promise<void>;
   /** Borra la biblioteca de letras (los planes las marcan como borradas). */
   songsReset(): Promise<void>;
+
+  // Media Studio (D-029)
+  studioList(): Promise<MediaSong[]>;
+  studioValidate(song: MediaSong): Promise<SongIssue[]>;
+  /** Solo guarda si no hay errores. */
+  studioSave(song: MediaSong): Promise<StudioSaveOutcome>;
+  studioDelete(id: string): Promise<void>;
+  /** Elige una pista y la copia a la carpeta de la app; null si se cancela. */
+  studioPickAudio(title: string, filterName: string): Promise<{ path: string; name: string } | null>;
+  /** Los bytes de una pista de la carpeta de la app, para decodificarla. */
+  studioReadAudio(path: string): Promise<ArrayBuffer>;
 
   // Planes del culto (features/plans)
   /** Con fecha primero, del más próximo al más lejano; después los que no tienen fecha. */

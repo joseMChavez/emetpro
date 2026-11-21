@@ -37,6 +37,7 @@ src/
 | `presentations` | PowerPoint/Impress/Keynote → PDF, copia privada de LibreOffice | `convert.rs`, `libreoffice.rs` |
 | `bible` | Biblias incluidas e importadas, capítulos, búsqueda | `domain.rs` (tipos, normalizar, buscar), `xml.rs`, `library.rs` |
 | `songs` | Biblioteca de letras | `domain.rs` (Song), `repo.rs` |
+| `studio` | Media Studio: canciones con pista sincronizada o en directo, con secciones y orden (D-029) | `domain.rs` (MediaSong, validación), `repo.rs`, `commands.rs` (pistas en `pistas/`) |
 | `plans` | Planes del culto: lo que se va a presentar, en orden (D-019) | `domain.rs` (Plan, PlanItem), `repo.rs` |
 | `settings` | Ajustes por clave | `repo.rs` |
 | `obs` | Transmisión con OBS | `client.rs` |
@@ -47,6 +48,7 @@ src/
 
 - **Dependencias hacia el núcleo:** una funcionalidad usa `core` y, si lo necesita, el `domain` de otra (por ejemplo, `presentations` usa los tipos de archivo de `media`) o una función pública de su `mod.rs` (por ejemplo, `remote` lee capítulos con `bible::chapter`). Nunca los comandos ni el estado de otra.
 - **`domain.rs` es puro:** si algo necesita Tauri, la base o el disco, no va ahí. Así se prueba con `cargo test` sin abrir la app.
+- **Lógica pura de la interfaz:** los `*.ts` sin Svelte ni plataforma (por ejemplo `features/studio/timeline.ts`) se prueban con vitest: `npm test`, con su prueba al lado (`timeline.test.ts`).
 - **El estado es de cada funcionalidad:** `OutputStore`, `BibleState`, `ObsState`… Cada una lo registra en su `setup`. La base (`Db`) es del núcleo porque la comparten varias; cada funcionalidad escribe sus consultas en su propio `impl Store` (`features/songs/repo.rs`).
 - **Tablas nuevas:** se añade una entrada al final de `MIGRATIONS` en `core/db.rs`. Nunca se edita una entrada publicada.
 

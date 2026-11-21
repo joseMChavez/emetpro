@@ -236,6 +236,8 @@ pub struct Issue {
 
 /// Una diapositiva de la canción desplegada según su orden. `slide: None` es una sección sin diapositivas
 /// (instrumental): la pantalla queda con el fondo.
+// Lo usarán el elemento de plan y la exportación (D-029); la interfaz despliega por su cuenta (studio/song.ts).
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ExpandedSlide<'a> {
     pub entry: &'a str,
@@ -249,6 +251,7 @@ impl MediaSong {
     }
 
     /// Las diapositivas en el orden en que se cantan; un coro que se repite aparece cada vez.
+    #[allow(dead_code)]
     pub fn expand(&self) -> Vec<ExpandedSlide<'_>> {
         let mut out = Vec::new();
         for entry in &self.order {

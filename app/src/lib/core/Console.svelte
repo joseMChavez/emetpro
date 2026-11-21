@@ -30,6 +30,8 @@
   import { markTool } from "$lib/features/marks/tool.svelte";
   import { applyMark, clearMarks, type MarkPart } from "$lib/features/marks/marks";
   import { screenKey } from "$lib/features/output/history.svelte";
+  import StudioTransport from "$lib/features/studio/StudioTransport.svelte";
+  import { goTo as studioGoTo } from "$lib/features/studio/live.svelte";
 
   const MONITOR_POLL_MS = 2000;
   const SETTINGS_ICON = "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z";
@@ -257,8 +259,17 @@
   /** Cambia directamente lo que está en pantalla (n empieza en 1). */
   function goLive(n: number) {
     if (busy) return;
+    // Una canción de Media Studio con pista: la pista salta allí y la pantalla la sigue (D-029).
+    if (studioGoTo(output.content, n)) return;
+    showLive(n);
+  }
+
+  /** Pone en pantalla la posición n de lo que ya está, sin más (Media Studio lo usa tras mover su pista). */
+  function showLive(n: number): boolean {
+    if (busy) return false;
     const next = moveDeck(output.content, n, pdfPages);
     if (next) send(next);
+    return true;
   }
 
   /** Palabras resaltadas (D-023): lo preparado y lo que está en pantalla, si son lo mismo, quedan con las mismas
@@ -664,6 +675,7 @@
         {@render videoFix(output.content)}
         {#if !output.open}<p class="muted small">{t(selected ? "live.autoOpenHint" : "live.closedHint")}</p>{/if}
 
+        <StudioTransport content={output.content} disabled={busy} onshow={showLive} />
         {#if livePosition}
           <div class="nav-row">
             <button class="btn big" onclick={() => goLive(livePosition!.n - 1)} disabled={busy || livePosition.n <= 1}>{t("live.previous")}</button>

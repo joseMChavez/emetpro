@@ -128,6 +128,9 @@ pub enum OutputContent {
         /// Con formato (D-027), una por diapositiva; `slides` lleva su texto plano.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         rich: Option<Vec<RichSlide>>,
+        /// Canción de Media Studio (D-029) de la que salen estas diapositivas: la consola la sigue con su pista.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        studio: Option<String>,
     },
     Image {
         path: String,

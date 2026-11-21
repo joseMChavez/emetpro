@@ -52,6 +52,14 @@ const MIGRATIONS: &[&str] = &["
     -- Animaciones (D-024): la propia de cada letra (JSON) y si un plan anima el texto (NULL = como lo general).
     ALTER TABLE songs ADD COLUMN animation TEXT;
     ALTER TABLE plans ADD COLUMN animate INTEGER;
+", "
+    -- Media Studio (D-029): cada canción entera como JSON (features/studio/domain.rs). El título va aparte para ordenar.
+    CREATE TABLE studio_songs (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        data TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+    );
 "];
 
 pub struct Store {
