@@ -719,6 +719,7 @@ const es = {
   "studio.bg.use": "Usar este fondo",
   "studio.bg.hint": "Un SVG animado propio (hecho con SVGator, Figma, Inkscape…) se elige con «Archivo…». Los SVG se muestran como imagen: no ejecutan código ni cargan nada de internet.",
   "studio.tpl.aurora": "Aurora",
+  "studio.tpl.galaxy": "Galaxia",
   "studio.tpl.lights": "Luces",
   "studio.tpl.waves": "Ondas",
   "studio.tpl.particles": "Partículas",

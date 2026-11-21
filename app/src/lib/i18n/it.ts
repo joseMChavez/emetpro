@@ -720,6 +720,7 @@ const it: Record<MessageKey, string> = {
   "studio.bg.use": "Usa questo sfondo",
   "studio.bg.hint": "Un SVG animato tuo (fatto con SVGator, Figma, Inkscape…) si sceglie con «File…». Gli SVG si mostrano come immagine: non eseguono codice né caricano nulla da internet.",
   "studio.tpl.aurora": "Aurora",
+  "studio.tpl.galaxy": "Galassia",
   "studio.tpl.lights": "Luci",
   "studio.tpl.waves": "Onde",
   "studio.tpl.particles": "Particelle",

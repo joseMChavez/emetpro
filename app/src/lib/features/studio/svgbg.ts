@@ -3,10 +3,10 @@
 // Solo degradados y movimiento: nada de filtros (el desenfoque es caro en los equipos de proyección modestos).
 // Puro, para probarlo con vitest.
 
-export type Template = "aurora" | "lights" | "waves" | "particles" | "gradient";
+export type Template = "aurora" | "galaxy" | "lights" | "waves" | "particles" | "gradient";
 export type Speed = "slow" | "medium" | "fast";
 
-export const TEMPLATES: Template[] = ["aurora", "lights", "waves", "particles", "gradient"];
+export const TEMPLATES: Template[] = ["aurora", "galaxy", "lights", "waves", "particles", "gradient"];
 
 export interface Generated {
   template: Template;
@@ -72,6 +72,94 @@ function aurora(g: Generated, rnd: () => number, k: number, colors: string[]): s
   return `<defs>${defs}</defs>${blobs}`;
 }
 
+/**
+ * Una galaxia en espiral vista de lado que gira despacio: brazos de polvo de colores y estrellas, un núcleo que late,
+ * una nebulosa al fondo y estrellas lejanas que titilan. El giro es un solo transform sobre el grupo (barato); la
+ * inclinación (achatar el disco) hace que los brazos de delante y de atrás se muevan como en una galaxia de verdad.
+ * La semilla cambia el dibujo y si tiene dos o tres brazos.
+ */
+function galaxy(g: Generated, rnd: () => number, k: number, colors: string[]): string {
+  const [c1, c2, c3] = colors;
+  const defs =
+    glow("gc", "#ffffff", 1) +
+    glow("gk", c3, Math.min(1, g.intensity * 1.1)) +
+    colors.map((c, i) => glow(`ga${i}`, c, g.intensity * 0.5)).join("") +
+    glow("gn", c2, g.intensity * 0.3) +
+    glow("gm", c1, g.intensity * 0.25);
+
+  // Cielo: estrellas lejanas, una de cada cuatro titila.
+  let sky = "";
+  for (let i = 0; i < 90; i++) {
+    const op = 0.25 + rnd() * 0.6;
+    const r = 0.6 + rnd() * 1.5;
+    const twinkle =
+      i % 4 === 0
+        ? `<animate attributeName="opacity" values="${n(op)};${n(op * 0.15)};${n(op)}" dur="${n(2.5 + rnd() * 5)}s" begin="-${n(rnd() * 6)}s" repeatCount="indefinite"/>`
+        : "";
+    sky += `<circle cx="${n(rnd() * W)}" cy="${n(rnd() * H)}" r="${n(r)}" fill="#ffffff" opacity="${n(op)}">${twinkle}</circle>`;
+  }
+
+  // Nebulosas al fondo, que se desplazan muy despacio.
+  const nebula = ["gn", "gm"]
+    .map((id) => {
+      const [x1, y1] = [rnd() * W, rnd() * H];
+      const [x2, y2] = [x1 + (rnd() - 0.5) * 300, y1 + (rnd() - 0.5) * 200];
+      return `<ellipse cx="0" cy="0" rx="${n(650 + rnd() * 300)}" ry="${n(360 + rnd() * 200)}" fill="url(#${id})"><animateTransform attributeName="transform" type="translate" values="${n(x1)} ${n(y1)};${n(x2)} ${n(y2)};${n(x1)} ${n(y1)}" dur="${n(60 * k)}s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/></ellipse>`;
+    })
+    .join("");
+
+  const arms = rnd() < 0.5 ? 2 : 3;
+  const R = 600;
+  const wind = 4.4;
+  let dust = "";
+  let stars = "";
+  for (let a = 0; a < arms; a++) {
+    const base = (a * 2 * Math.PI) / arms;
+    // Polvo de colores a lo largo del brazo: manchas de luz cada vez más grandes y tenues hacia afuera.
+    for (let j = 0; j < 28; j++) {
+      const t = (j + rnd() * 0.5) / 28;
+      const r = 60 + t * R;
+      const th = base + t * wind + (rnd() - 0.5) * 0.12;
+      const size = 50 + t * 80;
+      dust += `<ellipse cx="${n(r * Math.cos(th))}" cy="${n(r * Math.sin(th))}" rx="${n(size * 1.4)}" ry="${n(size)}" fill="url(#ga${(a + (j > 8 ? 1 : 0)) % 3})" opacity="${n(0.75 - t * 0.4)}"/>`;
+    }
+    // Estrellas del brazo: más juntas cerca del centro, algo dispersas a los lados.
+    for (let j = 0; j < 110; j++) {
+      const t = Math.pow(rnd(), 0.9);
+      const r = 35 + t * R + (rnd() - 0.5) * 55;
+      const th = base + t * wind + (rnd() - 0.5) * 0.4;
+      const fill = rnd() < 0.7 ? "#ffffff" : colors[Math.floor(rnd() * 3)];
+      const op = 0.55 + rnd() * 0.45;
+      // Algunas, más grandes, brillan y se apagan mientras gira.
+      const bright = j % 12 === 0;
+      const size = bright ? 3.2 + rnd() * 1.8 : 1.4 + rnd() * 2.6 * (1 - t * 0.4);
+      const shine = bright
+        ? `<animate attributeName="opacity" values="${n(op)};0.25;${n(op)}" dur="${n(2 + rnd() * 3)}s" begin="-${n(rnd() * 4)}s" repeatCount="indefinite"/>`
+        : "";
+      stars += `<circle cx="${n(r * Math.cos(th))}" cy="${n(r * Math.sin(th))}" r="${n(size)}" fill="${fill}" opacity="${n(op)}">${shine}</circle>`;
+    }
+  }
+  // Halo: estrellas sueltas por todo el disco.
+  for (let i = 0; i < 80; i++) {
+    const r = Math.sqrt(rnd()) * R * 1.1;
+    const th = rnd() * 2 * Math.PI;
+    stars += `<circle cx="${n(r * Math.cos(th))}" cy="${n(r * Math.sin(th))}" r="${n(0.8 + rnd() * 1.4)}" fill="#ffffff" opacity="${n(0.3 + rnd() * 0.5)}"/>`;
+  }
+
+  const cx = W * (0.44 + rnd() * 0.12);
+  const cy = H * (0.45 + rnd() * 0.1);
+  const tilt = -14 - rnd() * 18;
+  const spin = `<animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="${n(160 * k)}s" repeatCount="indefinite"/>`;
+  // El núcleo late despacio.
+  const core =
+    `<circle r="240" fill="url(#gk)"/>` +
+    `<circle r="105" fill="url(#gc)" opacity="0.85"><animate attributeName="opacity" values="0.7;1;0.7" dur="${n(7 * k)}s" repeatCount="indefinite"/></circle>`;
+  return (
+    `<defs>${defs}</defs>${nebula}${sky}` +
+    `<g transform="translate(${n(cx)} ${n(cy)}) rotate(${n(tilt)}) scale(1 0.46)"><g>${spin}${dust}${stars}</g>${core}</g>`
+  );
+}
+
 function lights(g: Generated, rnd: () => number, k: number, colors: string[]): string {
   const defs = colors.map((c, i) => glow(`l${i}`, c, 1)).join("");
   let out = "";
@@ -122,7 +210,7 @@ function gradient(g: Generated, _rnd: () => number, k: number, colors: string[])
   return `<defs><linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="${W}" y2="${H}">${stops}<animateTransform attributeName="gradientTransform" type="rotate" values="0 ${W / 2} ${H / 2};360 ${W / 2} ${H / 2}" dur="${dur}s" repeatCount="indefinite"/></linearGradient></defs><rect width="${W}" height="${H}" fill="url(#g)" opacity="${n(g.intensity)}"/>`;
 }
 
-const DRAW: Record<Template, (g: Generated, rnd: () => number, k: number, colors: string[]) => string> = { aurora, lights, waves, particles, gradient };
+const DRAW: Record<Template, (g: Generated, rnd: () => number, k: number, colors: string[]) => string> = { aurora, galaxy, lights, waves, particles, gradient };
 
 export function generateSvg(input: Generated): string {
   const fallback = DEFAULT_GENERATED;

@@ -720,6 +720,7 @@ const en: Record<MessageKey, string> = {
   "studio.bg.use": "Use this background",
   "studio.bg.hint": "Your own animated SVG (made with SVGator, Figma, Inkscape…) is chosen with “File…”. SVGs are shown as images: they don't run code or load anything from the internet.",
   "studio.tpl.aurora": "Aurora",
+  "studio.tpl.galaxy": "Galaxy",
   "studio.tpl.lights": "Lights",
   "studio.tpl.waves": "Waves",
   "studio.tpl.particles": "Particles",
