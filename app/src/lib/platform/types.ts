@@ -238,6 +238,8 @@ export interface SlideCue {
   slide: string;
   startMs: number;
   lines?: LineCue[];
+  /** La repartió la app («Repartir diapositivas»), no se marcó: se puede volver a repartir. */
+  auto?: boolean;
 }
 
 export interface Timing {
@@ -270,7 +272,7 @@ export type IssueCode =
   | "missingTitle" | "invalidReference" | "missingId" | "duplicateId" | "emptyOrder" | "unknownSection" | "trackWithoutAudio" | "invalidAudio"
   | "timeOutOfTrack" | "entriesOutOfOrder" | "sameEntryStart" | "unknownSlide" | "duplicateCue" | "slidesOutOfOrder" | "slideOutsideEntry"
   | "linesOutOfOrder" | "lineOutsideSlide" | "lineEndBeforeStart" | "linesOverlap" | "wordsOutOfOrder" | "wordOutsideLine"
-  | "unusedSection" | "emptySlide" | "untimedEntry" | "untimedSlide" | "extraLineCues" | "extraWordCues";
+  | "unusedSection" | "emptySlide" | "untimedEntry" | "untimedSlide" | "extraLineCues" | "extraWordCues" | "shortSlide";
 
 export interface SongIssue {
   code: IssueCode;

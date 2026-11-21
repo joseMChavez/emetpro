@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MediaSong } from "$lib/platform/types";
 import { dropTroubledTimings, emptySong, expand, hasTroubledTimings, sectionText, studioContent, withText } from "./song";
-import { activeWord, clearStart, clearWords, formatTime, markInSequence, markStart, markWord, nextStart, slideAt, slideRanges, slideStarts, slideWords, step, wordsInSlide } from "./timeline";
+import { activeWord, clearEntry, clearStart, clearWords, distributeSlides, entryHeads, formatTime, markInSequence, markSection, markStart, markWord, nextStart, slideAt, slideRanges, slideStarts, slideWords, step, wordsInSlide } from "./timeline";
 
 function song(): MediaSong {
   return {
@@ -263,5 +263,65 @@ describe("repetir una sección", () => {
     expect(step(r, st, 3, 60_000)).toEqual({ kind: "show", index: 4 });
     // En la primera diapositiva de la sección no se repite todavía.
     expect(step(r, st, 2, 29_990, loop)).toEqual({ kind: "stay" });
+  });
+});
+
+describe("marcar por secciones y repartir", () => {
+  /** Un coro de tres diapositivas, con 4, 1 y 1 palabras. */
+  function three(): MediaSong {
+    const s = song();
+    s.sections[2].slides = [
+      { id: "c1", lines: ["Gloria a Dios", "Amén"] },
+      { id: "c2", lines: ["Aleluya"] },
+      { id: "c3", lines: ["Santo"] },
+    ];
+    s.order = [
+      { id: "e0", section: "intro", timing: { startMs: 0, slides: [] } },
+      { id: "e2", section: "coro", timing: { startMs: 20_000, slides: [] } },
+      { id: "e1", section: "v1", timing: { startMs: 40_000, slides: [] } },
+    ];
+    return s;
+  }
+
+  it("reparte según las palabras hasta el siguiente comienzo en la grabación", () => {
+    const { song: out, filled } = distributeSlides(three(), 100_000);
+    expect(filled).toBe(2);
+    // Pesos 7, 4, 4 sobre 20 s.
+    const cues = out.order[1].timing!.slides;
+    expect(cues.map((c) => [c.slide, c.startMs, c.auto])).toEqual([
+      ["c2", 29_333, true],
+      ["c3", 34_667, true],
+    ]);
+    // Avanza solo: cada una tiene su tramo.
+    const ranges = slideRanges(expand(out), 100_000);
+    expect(ranges.slice(1, 4).map((r) => [r!.start, r!.end])).toEqual([
+      [20_000, 29_333],
+      [29_333, 34_667],
+      [34_667, 40_000],
+    ]);
+  });
+
+  it("lo marcado a mano se queda y hace de tope; lo repartido se vuelve a repartir", () => {
+    const s = three();
+    s.order[1].timing!.slides = [{ slide: "c3", startMs: 36_000 }];
+    const first = distributeSlides(s, 100_000).song;
+    expect(first.order[1].timing!.slides.map((c) => [c.slide, c.startMs, !!c.auto])).toEqual([
+      ["c2", 30_182, true],
+      ["c3", 36_000, false],
+    ]);
+    // La sección siguiente empieza antes: se vuelve a repartir con el nuevo final.
+    const moved = { ...first, order: first.order.map((e, i) => (i === 2 ? { ...e, timing: { startMs: 38_000, slides: [] } } : e)) };
+    expect(distributeSlides(moved, 100_000).song.order[1].timing!.slides.map((c) => c.startMs)).toEqual([30_182, 36_000]);
+    const clean = distributeSlides({ ...moved, order: moved.order.map((e, i) => (i === 1 ? { ...e, timing: { startMs: 20_000, slides: [] } } : e)) }, 100_000);
+    expect(clean.song.order[1].timing!.slides.map((c) => c.startMs)).toEqual([28_400, 33_200]);
+  });
+
+  it("Espacio por secciones: marca la aparición y descarta lo repartido dentro de ella", () => {
+    const repartida = distributeSlides(three(), 100_000).song;
+    const ex = expand(repartida);
+    expect(entryHeads(ex)).toEqual([0, 1, 4]);
+    const out = markSection(repartida, ex, 1, 22_000);
+    expect(out.order[1].timing).toEqual({ startMs: 22_000, slides: [{ slide: "c1", startMs: 22_000 }] });
+    expect(clearEntry(out, 1).order[1].timing).toBeNull();
   });
 });

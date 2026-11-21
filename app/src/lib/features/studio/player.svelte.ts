@@ -26,6 +26,11 @@ class Player {
 
   /** Terminando con el fundido largo. */
   finishing = $state(false);
+  /**
+   * Velocidad (1 = la real). Solo para sincronizar con calma: el editor la baja y la vuelve a 1 al cerrarse, y la
+   * canción en pantalla siempre suena a 1. Los tiempos siguen siendo los de la pista.
+   */
+  rate = $state(1);
 
   private ctx: AudioContext | null = null;
   /** Volumen general: los fundidos de reproducir, pausar y terminar (cada trozo tiene el suyo para los saltos). */
@@ -106,7 +111,7 @@ class Player {
   /** Posición actual, del reloj del audio. */
   now(): number {
     if (!this.playing || !this.ctx) return this.offset * 1000;
-    return Math.min(this.durationMs, (this.offset + this.ctx.currentTime - this.startedAt) * 1000);
+    return Math.min(this.durationMs, (this.offset + (this.ctx.currentTime - this.startedAt) * this.rate) * 1000);
   }
 
   async play() {
@@ -161,6 +166,49 @@ class Player {
     gain.cancelScheduledValues(at);
     gain.setValueAtTime(from ?? gain.value, at);
     gain.linearRampToValueAtTime(to, at + seconds);
+  }
+
+  /** Cambia la velocidad sin cortar: sigue desde donde iba. */
+  setRate(rate: number) {
+    rate = Math.max(0.5, Math.min(1, rate));
+    if (rate === this.rate) return;
+    if (this.playing) {
+      const at = this.now() / 1000;
+      this.rate = rate;
+      this.startSource(at);
+    } else {
+      this.rate = rate;
+    }
+  }
+
+  /**
+   * La forma de la pista: el volumen medio (RMS) de cada uno de `bins` tramos, de 0 a 1, para dibujar la onda en
+   * el editor. El medio y no el pico: en la música grabada hoy el pico toca el máximo casi siempre y la onda sería
+   * un bloque; el medio deja ver dónde baja y sube (los cambios de sección). null si no hay pista cargada.
+   */
+  peaks(bins: number): Float32Array | null {
+    const buffer = this.buffer;
+    if (!buffer || bins < 1) return null;
+    const out = new Float32Array(bins);
+    const per = buffer.length / bins;
+    // Saltear muestras: una pista de 4 minutos tiene 10 millones; con unas 2000 por tramo la forma no cambia.
+    const stride = Math.max(1, Math.floor(per / 2000));
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+      const data = buffer.getChannelData(c);
+      for (let b = 0; b < bins; b++) {
+        const end = Math.min(data.length, Math.floor((b + 1) * per));
+        let sum = 0;
+        let count = 0;
+        for (let i = Math.floor(b * per); i < end; i += stride) {
+          sum += data[i] * data[i];
+          count++;
+        }
+        out[b] += count ? sum / count : 0;
+      }
+    }
+    for (let b = 0; b < bins; b++) out[b] = Math.sqrt(out[b] / buffer.numberOfChannels);
+    const max = out.reduce((m, v) => Math.max(m, v), 0) || 1;
+    return out.map((v) => v / max);
   }
 
   toggle() {
@@ -238,6 +286,7 @@ class Player {
     gain.connect(ctx.destination);
     const source = ctx.createBufferSource();
     source.buffer = this.buffer;
+    source.playbackRate.value = this.rate;
     source.connect(gain);
     source.onended = () => {
       // Solo cuenta el final del trozo que sigue sonando (los saltos paran el anterior, que también avisa).

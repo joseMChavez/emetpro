@@ -191,6 +191,81 @@ function expand2(song: MediaSong, expanded: Expanded[]): Expanded[] {
   return expanded.map((e) => ({ ...e, entry: song.order[e.entryIndex] }));
 }
 
+// ---- Por secciones: se marca dónde empieza cada parte y la app reparte sus diapositivas ----
+
+/** Peso de una diapositiva al repartir: las de más palabras se ven más tiempo (y ninguna casi nada). */
+function weight(lines: string[]): number {
+  return wordsInSlide(lines) + 3;
+}
+
+/**
+ * Reparte las diapositivas de cada aparición con tiempo entre su comienzo y su final (el siguiente comienzo en la
+ * grabación), según cuántas palabras tiene cada una. Las marcadas a mano se quedan y hacen de tope; solo se
+ * escriben las que faltan y las que ya repartió antes la app (`auto`). Devuelve la canción y cuántas repartió.
+ */
+export function distributeSlides(song: MediaSong, durationMs: number): { song: MediaSong; filled: number } {
+  const entryStarts = song.order.map((e) => e.timing?.startMs).filter((s): s is number => s !== undefined && s < durationMs);
+  let filled = 0;
+  const order = song.order.map((entry) => {
+    const timing = entry.timing;
+    const section = song.sections.find((x) => x.id === entry.section);
+    if (!timing || !section || section.slides.length < 2 || timing.startMs >= durationMs) return entry;
+    const end = Math.min(durationMs, ...entryStarts.filter((s) => s > timing.startMs));
+    const manual = new Map(timing.slides.filter((c) => !c.auto).map((c) => [c.slide, c]));
+    // Topes: la primera (con su marca o con el comienzo de la aparición) y las marcadas a mano.
+    const anchors: { index: number; at: number }[] = [];
+    section.slides.forEach((slide, index) => {
+      const cue = manual.get(slide.id);
+      if (cue) anchors.push({ index, at: cue.startMs });
+      else if (index === 0) anchors.push({ index, at: timing.startMs });
+    });
+    const slides: SlideCue[] = [...manual.values()];
+    anchors.forEach((anchor, a) => {
+      const to = anchors[a + 1] ?? { index: section.slides.length, at: end };
+      // Topes desordenados (una marca a mano fuera de sitio): ese tramo no se toca, la validación lo dice.
+      if (to.at <= anchor.at || to.index - anchor.index < 2) return;
+      const weights = section.slides.slice(anchor.index, to.index).map((x) => weight(x.lines));
+      const total = weights.reduce((x, y) => x + y, 0);
+      let sum = weights[0];
+      for (let i = anchor.index + 1; i < to.index; i++) {
+        slides.push({ slide: section.slides[i].id, startMs: Math.round(anchor.at + ((to.at - anchor.at) * sum) / total), auto: true });
+        sum += weights[i - anchor.index];
+        filled++;
+      }
+    });
+    const position = new Map(section.slides.map((x, i) => [x.id, i]));
+    slides.sort((a, b) => (position.get(a.slide) ?? 0) - (position.get(b.slide) ?? 0));
+    return { ...entry, timing: { ...timing, slides } };
+  });
+  return { song: { ...song, order }, filled };
+}
+
+/** La primera diapositiva desplegada (o la instrumental) de cada aparición, en orden. */
+export function entryHeads(expanded: Expanded[]): number[] {
+  return expanded.map((e, k) => (k === 0 || expanded[k - 1].entryIndex !== e.entryIndex ? k : -1)).filter((k) => k >= 0);
+}
+
+/**
+ * Marcar por secciones (Espacio): la aparición de la diapositiva desplegada k empieza en ms. Lo que había repartido
+ * la app dentro de ella se descarta (se repartirá de nuevo); lo desordenado se quita como en `markInSequence`.
+ */
+export function markSection(song: MediaSong, expanded: Expanded[], k: number, ms: number): MediaSong {
+  const e = expanded[k];
+  if (!e) return song;
+  const next = markInSequence(song, expanded, k, ms);
+  return {
+    ...next,
+    order: next.order.map((entry, i) =>
+      i === e.entryIndex && entry.timing ? { ...entry, timing: { ...entry.timing, slides: entry.timing.slides.filter((c) => !c.auto) } } : entry,
+    ),
+  };
+}
+
+/** Quita todos los tiempos de una aparición (deshacer al marcar por secciones). */
+export function clearEntry(song: MediaSong, entryIndex: number): MediaSong {
+  return { ...song, order: song.order.map((entry, i) => (i === entryIndex ? { ...entry, timing: null } : entry)) };
+}
+
 // ---- Palabra por palabra ----
 
 /** Palabras de una línea: cada tramo sin espacios, como las marcas (D-023). */

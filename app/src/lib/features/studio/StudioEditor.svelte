@@ -9,9 +9,10 @@
   import { player } from "./player.svelte";
   import { issuePlace, issueText, kindName, sectionName } from "./names";
   import BackgroundField from "./BackgroundField.svelte";
+  import Waveform, { type Mark } from "./Waveform.svelte";
   import { parseLyrics } from "./parse";
   import { dropTroubledTimings, expand, hasTroubledTimings, newId, sectionOf, sectionText, SECTION_KINDS, slideText, studioContent, withText } from "./song";
-  import { clearStart, clearWords, formatTime, markInSequence, markStart, markWord, slideAt, slideStarts, slideWords, wordsInSlide } from "./timeline";
+  import { clearEntry, clearStart, clearWords, distributeSlides, entryHeads, formatTime, markInSequence, markSection, markStart, markWord, slideAt, slideStarts, slideWords, wordsInSlide } from "./timeline";
 
   let {
     initial,
@@ -42,8 +43,15 @@
   let drafts = $state<Record<string, string>>({});
   /** La siguiente diapositiva desplegada que se marcará con Espacio. */
   let next = $state(0);
-  /** Marcar palabra por palabra (para iluminar la que suena) en vez de solo diapositivas. */
-  let byWord = $state(false);
+  /**
+   * Qué marca Espacio: el comienzo de cada sección (la app reparte sus diapositivas: lo más fácil, sin saberse la
+   * letra), de cada diapositiva, o de cada palabra (para iluminar la que suena).
+   */
+  let markBy = $state<"sections" | "slides" | "words">("sections");
+  let byWord = $derived(markBy === "words");
+  /** Velocidad al sincronizar (los tiempos siguen siendo los de la pista). */
+  const RATES = [1, 0.75, 0.5];
+  let syncNotice = $state<string | null>(null);
   /** En modo palabra: la siguiente palabra de la diapositiva `next`. */
   let nextWord = $state(0);
 
@@ -56,6 +64,19 @@
   let ownTrack = $derived(song.audio !== null && player.path === song.audio.path);
   /** La pista de la canción en pantalla está sonando: el editor no la interrumpe. */
   let liveBusy = $derived(player.playing && onScreen.song !== null && !ownTrack);
+  let heads = $derived(entryHeads(expanded));
+  /** La onda de la pista cargada (se calcula una vez por pista). */
+  let peaks = $derived(syncOpen && ownTrack && player.status === "ready" ? player.peaks(1200) : null);
+  let marks = $derived.by((): Mark[] =>
+    expanded.flatMap((e, k): Mark[] => {
+      const start = starts[k];
+      if (start === null) return [];
+      const head = heads.includes(k);
+      const auto = e.entry.timing?.slides.find((c) => c.slide === e.slide?.id)?.auto;
+      return [{ ms: start, kind: head ? "section" : auto ? "auto" : "slide", label: head ? sectionName(song, e.section) : slideText(e.slide).split("\n")[0] }];
+    }),
+  );
+  let autoRows = $derived(expanded.map((e) => !!e.entry.timing?.slides.find((c) => c.slide === e.slide?.id)?.auto));
 
   function snapshot(): MediaSong {
     return $state.snapshot(song) as MediaSong;
@@ -201,10 +222,42 @@
     if (syncOpen) requestAnimationFrame(() => syncBlock?.scrollIntoView({ block: "start", behavior: "smooth" }));
   }
 
+  /** La primera fila de la sección de la fila k (al marcar por secciones, Espacio marca secciones). */
+  function headOf(k: number): number {
+    return [...heads].reverse().find((h) => h <= k) ?? 0;
+  }
+
+  function setMarkBy(mode: typeof markBy) {
+    markBy = mode;
+    nextWord = 0;
+    if (mode === "sections") next = headOf(Math.min(next, expanded.length - 1));
+  }
+
+  /** Reparte con la duración de la pista. Devuelve cuántas repartió. */
+  function spread(source: MediaSong): number {
+    const { song: out, filled } = distributeSlides(source, song.audio?.durationMs ?? 0);
+    song.order = out.order;
+    return filled;
+  }
+
+  function distribute() {
+    const filled = spread(snapshot());
+    syncNotice = filled > 0 ? tCount("studio.distributed", filled) : t("studio.nothingToDistribute");
+    issues = null;
+    dirty = true;
+  }
+
   function mark() {
     if (!ownTrack || next >= expanded.length) return;
     const slide = expanded[next].slide;
-    if (byWord && slide && wordsInSlide(slide.lines) > 0) {
+    syncNotice = null;
+    if (markBy === "sections") {
+      const k = headOf(next);
+      // Marcar una sección también reparte: las anteriores quedan con su final y esta llega hasta la siguiente.
+      spread(markSection(snapshot(), expanded, k, player.now()));
+      next = heads.find((h) => h > k) ?? expanded.length;
+      nextWord = 0;
+    } else if (byWord && slide && wordsInSlide(slide.lines) > 0) {
       song.order = markWord(snapshot(), expanded, next, nextWord, player.now()).order;
       nextWord++;
       if (nextWord >= wordsInSlide(slide.lines)) {
@@ -221,6 +274,15 @@
   }
 
   function unmark() {
+    if (markBy === "sections") {
+      const previous = [...heads].reverse().find((h) => h < next);
+      if (previous === undefined) return;
+      next = previous;
+      spread(clearEntry(snapshot(), expanded[previous].entryIndex));
+      issues = null;
+      dirty = true;
+      return;
+    }
     // Por palabra, a mitad de una diapositiva: se borran sus palabras para marcarla otra vez desde la primera.
     if (byWord && nextWord > 0) {
       song.order = clearWords(snapshot(), expanded, next).order;
@@ -237,11 +299,15 @@
   }
 
   async function goRow(k: number) {
-    next = k;
+    next = markBy === "sections" ? headOf(k) : k;
     nextWord = 0;
     const start = starts[k];
     if (start !== null && (await ensureTrack())) player.seek(start);
     preview(k);
+  }
+
+  async function seekTo(ms: number) {
+    if (await ensureTrack()) player.seek(ms);
   }
 
   function nudge(k: number, ms: number) {
@@ -318,6 +384,7 @@
   function close(saved: MediaSong | null) {
     // La pista del editor se para; la de la canción en pantalla sigue sonando.
     if (ownTrack && onScreen.song?.audio?.path !== player.path) player.pause();
+    player.setRate(1);
     onclose(saved);
   }
 </script>
@@ -438,11 +505,19 @@
         <div class="row">
           <span class="label">{t("studio.markBy")}</span>
           <div class="segmented" role="group">
-            <button type="button" aria-pressed={!byWord} onclick={() => ((byWord = false), (nextWord = 0))}>{t("studio.markBy.slides")}</button>
-            <button type="button" aria-pressed={byWord} onclick={() => ((byWord = true), (nextWord = 0))}>{t("studio.markBy.words")}</button>
+            <button type="button" aria-pressed={markBy === "sections"} onclick={() => setMarkBy("sections")}>{t("studio.markBy.sections")}</button>
+            <button type="button" aria-pressed={markBy === "slides"} onclick={() => setMarkBy("slides")}>{t("studio.markBy.slides")}</button>
+            <button type="button" aria-pressed={markBy === "words"} onclick={() => setMarkBy("words")}>{t("studio.markBy.words")}</button>
+          </div>
+          <span class="label">{t("studio.speed")}</span>
+          <div class="segmented" role="group" title={t("studio.speedHint")}>
+            {#each RATES as rate (rate)}
+              <button type="button" aria-pressed={player.rate === rate} onclick={() => player.setRate(rate)}>{Math.round(rate * 100)} %</button>
+            {/each}
           </div>
         </div>
-        <p class="muted small">{t(byWord ? "studio.syncHintWords" : "studio.syncHint")}</p>
+        <p class="muted small">{t(markBy === "words" ? "studio.syncHintWords" : markBy === "sections" ? "studio.syncHintSections" : "studio.syncHint")}</p>
+        <Waveform {peaks} durationMs={song.audio.durationMs} positionMs={ownTrack ? player.positionMs : 0} {marks} onseek={seekTo} />
         <div class="row transport">
           <button type="button" class="btn primary" onclick={togglePlay} disabled={liveBusy || (ownTrack && player.status === "loading")}>
             {ownTrack && player.playing ? `⏸ ${t("studio.pause")}` : `▶ ${t("studio.play")}`}
@@ -451,12 +526,16 @@
           <span class="time">{ownTrack ? formatTime(player.positionMs) : formatTime(0)} / {formatTime(song.audio.durationMs)}</span>
           <button type="button" class="btn" onclick={mark} disabled={!ownTrack || next >= expanded.length}>{t("studio.markNext")}</button>
           <button type="button" class="btn ghost" onclick={unmark} disabled={next === 0}>{t("studio.unmark")}</button>
+          {#if markBy !== "words"}
+            <button type="button" class="btn ghost" onclick={distribute} title={t("studio.distributeHint")}>{t("studio.distribute")}</button>
+          {/if}
         </div>
+        {#if syncNotice}<p class="notice small" role="status">{syncNotice}</p>{/if}
         <ol class="rows">
           {#each expanded as e, k (`${e.entry.id}-${e.slide?.id ?? "inst"}`)}
             <li class:playing={playingRow === k} class:next={next === k}>
               <button type="button" class="row-main" onclick={() => goRow(k)}>
-                <span class="when">{starts[k] === null ? "—" : formatTime(starts[k]!)}</span>
+                <span class="when" class:auto={autoRows[k]} title={autoRows[k] ? t("studio.autoTime") : undefined}>{starts[k] === null ? "—" : formatTime(starts[k]!)}</span>
                 <span class="what">
                   <strong>{sectionName(song, e.section)}</strong>
                   {#if byWord && next === k && e.slide}
@@ -550,6 +629,8 @@
   .rows li.next { border-color: var(--accent); }
   .rows li.playing { background: var(--live-soft); }
   .row-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 4px 8px; font: inherit; text-align: left; color: var(--text); background: transparent; border: 0; cursor: pointer; }
+  .when.auto { font-style: italic; opacity: 0.7; }
+  .notice { margin: 0; color: var(--accent); font-weight: 600; }
   .when { flex: none; width: 5em; font-variant-numeric: tabular-nums; color: var(--muted); }
   .what { flex: 1; min-width: 0; display: flex; gap: 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .what .muted { overflow: hidden; text-overflow: ellipsis; }

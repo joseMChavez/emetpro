@@ -78,6 +78,8 @@ export function follow(content: OutputContent) {
   const play = autoplay !== null && autoplay === song?.id;
   if (play) autoplay = null;
   if (!hasTrack(song)) return;
+  // En pantalla siempre a la velocidad real (el editor la baja para sincronizar con calma).
+  player.setRate(1);
   // La misma canción enviada otra vez (en pausa o ya terminada): suena desde la diapositiva enviada.
   if (!changed) {
     if (play && trackReady() && !player.playing) {

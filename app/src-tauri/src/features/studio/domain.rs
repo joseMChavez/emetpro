@@ -108,6 +108,9 @@ pub struct SlideCue {
     pub start_ms: u32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lines: Vec<LineCue>,
+    /// La repartió la app («Repartir diapositivas»), no la marcó nadie: se puede volver a repartir.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub auto: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -209,13 +212,18 @@ pub enum IssueCode {
     ExtraLineCues,
     /// Ídem con las palabras de una línea.
     ExtraWordCues,
+    /// Una diapositiva se ve menos de SHORT_SLIDE_MS en la grabación: no da tiempo a leerla (¿se marcó dos veces?).
+    ShortSlide,
 }
+
+/// Menos que esto en pantalla no se alcanza a leer.
+pub const SHORT_SLIDE_MS: u32 = 1_500;
 
 impl IssueCode {
     pub fn severity(self) -> Severity {
         use IssueCode::*;
         match self {
-            UnusedSection | EmptySlide | UntimedEntry | UntimedSlide | ExtraLineCues | ExtraWordCues | EntriesOutOfOrder => {
+            UnusedSection | EmptySlide | UntimedEntry | UntimedSlide | ExtraLineCues | ExtraWordCues | EntriesOutOfOrder | ShortSlide => {
                 Severity::Warning
             }
             _ => Severity::Error,
@@ -379,6 +387,14 @@ fn check_entry(entry: &OrderEntry, timing: &Timing, end: u32, section: &SongSect
     let position: HashMap<&str, usize> = section.slides.iter().enumerate().map(|(i, s)| (s.id.as_str(), i)).collect();
     let mut seen = HashSet::new();
     let mut last: Option<(usize, u32)> = None;
+    // La primera sin tiempo propio empieza con su aparición y dura hasta la primera marcada.
+    if let Some(first) = section.slides.first() {
+        let first_cue = timing.slides.iter().map(|c| c.start_ms).filter(|&s| s >= timing.start_ms && s < end).min();
+        let own = timing.slides.iter().any(|c| c.slide == first.id);
+        if !own && first_cue.is_some_and(|s| s > timing.start_ms && s - timing.start_ms < SHORT_SLIDE_MS) {
+            issues.add(IssueCode::ShortSlide, at_slide(Some(&entry.id), &section.id, &first.id));
+        }
+    }
     for (i, cue) in timing.slides.iter().enumerate() {
         let at = at_slide(Some(&entry.id), &section.id, &cue.slide);
         let Some(&index) = position.get(cue.slide.as_str()) else {
@@ -402,6 +418,9 @@ fn check_entry(entry: &OrderEntry, timing: &Timing, end: u32, section: &SongSect
             .map(|c| c.start_ms)
             .find(|&s| s > cue.start_ms && s <= end)
             .unwrap_or(end);
+        if slide_end - cue.start_ms < SHORT_SLIDE_MS {
+            issues.add(IssueCode::ShortSlide, at_slide(Some(&entry.id), &section.id, &cue.slide));
+        }
         check_slide(&entry.id, &section.slides[index], &section.id, cue, slide_end, issues);
     }
     // Sin tiempo en ninguna aparición: no avanza sola. La primera empieza con su aparición.
@@ -506,7 +525,7 @@ mod tests {
     }
 
     fn cue(slide: &str, start_ms: u32, lines: Vec<LineCue>) -> SlideCue {
-        SlideCue { slide: slide.into(), start_ms, lines }
+        SlideCue { slide: slide.into(), start_ms, lines, auto: false }
     }
 
     fn line(start_ms: u32, end_ms: Option<u32>, words: &[u32]) -> LineCue {
@@ -628,6 +647,24 @@ mod tests {
         let mut song = sample();
         song.order[4].timing = timing(100_000, vec![]);
         assert_eq!(codes(&song), vec![IssueCode::TimeOutOfTrack]);
+    }
+
+    #[test]
+    fn diapositiva_demasiado_corta() {
+        // El segundo coro: «Amén» a 0,8 s de «Gloria a Dios» (se tocó Espacio dos veces).
+        let mut song = sample();
+        song.order[4].timing.as_mut().unwrap().slides[1].start_ms = 60_800;
+        let issues = song.validate();
+        assert_eq!(issues.iter().map(|i| (i.code, i.severity)).collect::<Vec<_>>(), vec![(IssueCode::ShortSlide, Severity::Warning)]);
+        assert_eq!(issues[0].at.slide.as_deref(), Some("c1"));
+        // La última de una aparición dura hasta la siguiente aparición.
+        let mut song = sample();
+        song.order[2].timing.as_mut().unwrap().slides[1].start_ms = 39_000;
+        assert_eq!(codes(&song), vec![IssueCode::ShortSlide]);
+        // La primera sin marca propia dura hasta la primera marcada.
+        let mut song = sample();
+        song.order[4].timing = timing(59_000, vec![cue("c2", 60_000, vec![])]);
+        assert_eq!(codes(&song), vec![IssueCode::ShortSlide]);
     }
 
     #[test]
