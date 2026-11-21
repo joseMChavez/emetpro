@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MediaSong } from "$lib/platform/types";
-import { emptySong, expand, sectionText, studioContent, withText } from "./song";
-import { clearStart, formatTime, markStart, nextStart, slideAt, slideRanges, slideStarts, step } from "./timeline";
+import { dropTroubledTimings, emptySong, expand, hasTroubledTimings, sectionText, studioContent, withText } from "./song";
+import { clearStart, formatTime, markInSequence, markStart, nextStart, slideAt, slideRanges, slideStarts, step } from "./timeline";
 
 function song(): MediaSong {
   return {
@@ -171,5 +171,40 @@ describe("tramos en la grabación y avance (orden propio)", () => {
     const s = song();
     expect(step(ranges(s), slideStarts(expand(s)), 1, 65_000)).toEqual({ kind: "show", index: 4 });
     expect(step(ranges(s), slideStarts(expand(s)), 4, 2_000)).toEqual({ kind: "show", index: 0 });
+  });
+});
+
+describe("sincronizar sin dejar errores", () => {
+  it("volver a marcar una diapositiva que se pasó quita las siguientes que quedarían antes", () => {
+    // Desplegada: 0 intro (0), 1 estrofa (8 s), 2-3 coro (20/30), 4-5 coro (60/70).
+    // Se pasó la estrofa: se vuelve a marcar a los 25 s, después del comienzo del coro (20 s).
+    const s = song();
+    const fixed = markInSequence(s, expand(s), 1, 25_000);
+    expect(slideStarts(expand(fixed))).toEqual([0, 25_000, null, 30_000, 60_000, 70_000]);
+    // Y la siguiente marca (el coro, a los 27 s) sigue en orden.
+    const again = markInSequence(fixed, expand(fixed), 2, 27_000);
+    expect(slideStarts(expand(again))).toEqual([0, 25_000, 27_000, 30_000, 60_000, 70_000]);
+  });
+
+  it("marcar en orden no quita nada", () => {
+    const s = song();
+    expect(markInSequence(s, expand(s), 2, 21_000).order[3]).toBe(s.order[3]);
+    expect(slideStarts(expand(markInSequence(s, expand(s), 2, 21_000)))).toEqual([0, 8_000, 21_000, 30_000, 60_000, 70_000]);
+  });
+
+  it("quitar solo los tiempos con errores", () => {
+    const s = song();
+    const issues = [
+      { code: "slideOutsideEntry" as const, severity: "error" as const, at: { entry: "e2", section: "coro", slide: "c2" } },
+      { code: "timeOutOfTrack" as const, severity: "error" as const, at: { entry: "e3" } },
+      { code: "untimedEntry" as const, severity: "warning" as const, at: { entry: "e1" } },
+    ];
+    expect(hasTroubledTimings(issues)).toBe(true);
+    const clean = dropTroubledTimings(s, issues);
+    expect(clean.order[2].timing!.slides.map((c) => c.slide)).toEqual(["c1"]);
+    expect(clean.order[3].timing).toBeNull();
+    // Los avisos no se tocan.
+    expect(clean.order[1]).toBe(s.order[1]);
+    expect(hasTroubledTimings([{ code: "missingTitle", severity: "error", at: {} }])).toBe(false);
   });
 });

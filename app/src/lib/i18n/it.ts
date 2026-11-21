@@ -671,6 +671,7 @@ const it: Record<MessageKey, string> = {
   "remote.plan": "Piano · {name}",
 
   // Media Studio (D-029)
+  "studio.dropTroubled": "Rimuovi i tempi con errori",
   "studio.notSynced": "Questo brano non ha ancora tempi: la traccia suona di seguito e non segue lo schermo. Segnali in Modifica → Sincronizza con la traccia.",
   "studio.badge.unsynced": "non sincronizzato",
   "studio.discardConfirm": "Ci sono modifiche non salvate.",

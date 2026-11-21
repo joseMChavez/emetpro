@@ -14,7 +14,8 @@ export function slideStarts(expanded: Expanded[]): (number | null)[] {
     if (!e.slide) return timing.startMs;
     const cue = timing.slides.find((c) => c.slide === e.slide!.id);
     if (cue) return cue.startMs;
-    return e.slideIndex === 0 ? timing.startMs : null;
+    // La primera hereda el comienzo de su aparición, salvo que otra diapositiva ya empiece ahí o antes.
+    return e.slideIndex === 0 && !timing.slides.some((c) => c.startMs <= timing.startMs) ? timing.startMs : null;
   });
 }
 
@@ -151,6 +152,29 @@ export function clearStart(song: MediaSong, expanded: Expanded[], k: number): Me
     return { ...entry, timing: { startMs: slides[0].startMs, slides } };
   });
   return { ...song, order };
+}
+
+/**
+ * Marcar sincronizando (Espacio): como `markStart`, y además quita las marcas que quedarían desordenadas respecto a
+ * esta: las de diapositivas siguientes que empiezan antes o a la vez, y las de anteriores que empiezan después o a
+ * la vez. Así volver a marcar una diapositiva que se pasó es «seguir marcando desde aquí» y nunca deja errores.
+ */
+export function markInSequence(song: MediaSong, expanded: Expanded[], k: number, ms: number): MediaSong {
+  let next = markStart(song, expanded, k, ms);
+  const marked = Math.max(0, Math.round(ms));
+  const starts = slideStarts(expand2(next, expanded));
+  for (let j = expanded.length - 1; j >= 0; j--) {
+    if (j === k) continue;
+    const start = starts[j];
+    if (start === null) continue;
+    if ((j > k && start <= marked) || (j < k && start >= marked)) next = clearStart(next, expand2(next, expanded), j);
+  }
+  return next;
+}
+
+/** Las mismas diapositivas desplegadas, con las apariciones (y sus tiempos) de la canción cambiada. */
+function expand2(song: MediaSong, expanded: Expanded[]): Expanded[] {
+  return expanded.map((e) => ({ ...e, entry: song.order[e.entryIndex] }));
 }
 
 export function formatTime(ms: number): string {

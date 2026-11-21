@@ -1,6 +1,6 @@
 // Media Studio (D-029): la canción desplegada según su orden y el contenido que va a la pantalla.
 // Puro: sin Svelte ni plataforma, para probarlo con vitest.
-import type { MediaSong, OrderEntry, OutputContent, SectionKind, SongSection, SongSlide } from "$lib/platform/types";
+import type { MediaSong, OrderEntry, OutputContent, SectionKind, SongIssue, SongSection, SongSlide } from "$lib/platform/types";
 
 /** Una diapositiva de la canción en el orden en que se canta. `slide: null` = sección sin diapositivas (instrumental). */
 export interface Expanded {
@@ -88,3 +88,26 @@ export function emptySong(id: string): MediaSong {
 }
 
 export const SECTION_KINDS: SectionKind[] = ["intro", "verse", "preChorus", "chorus", "bridge", "instrumental", "interlude", "tag", "outro", "custom"];
+
+/**
+ * Quita los tiempos que tienen errores (los de una diapositiva, o los de toda una aparición si el error es de ella),
+ * para poder guardar sin perder el resto de la sincronización.
+ */
+export function dropTroubledTimings(song: MediaSong, issues: SongIssue[]): MediaSong {
+  const troubled = issues.filter((i) => i.severity === "error" && i.at.entry);
+  if (troubled.length === 0) return song;
+  const order = song.order.map((entry) => {
+    const mine = troubled.filter((i) => i.at.entry === entry.id);
+    if (mine.length === 0 || !entry.timing) return entry;
+    if (mine.some((i) => !i.at.slide)) return { ...entry, timing: null };
+    const bad = new Set(mine.map((i) => i.at.slide));
+    const slides = entry.timing.slides.filter((c) => !bad.has(c.slide));
+    return { ...entry, timing: { ...entry.timing, slides } };
+  });
+  return { ...song, order };
+}
+
+/** Hay errores de tiempos que `dropTroubledTimings` puede quitar. */
+export function hasTroubledTimings(issues: SongIssue[]): boolean {
+  return issues.some((i) => i.severity === "error" && i.at.entry);
+}

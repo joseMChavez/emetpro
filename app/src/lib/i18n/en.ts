@@ -671,6 +671,7 @@ const en: Record<MessageKey, string> = {
   "remote.plan": "Plan · {name}",
 
   // Media Studio (D-029)
+  "studio.dropTroubled": "Remove the timings with errors",
   "studio.notSynced": "This song has no timings yet: the track plays straight through and doesn't follow the screen. Mark them in Edit → Sync with the track.",
   "studio.badge.unsynced": "not synced",
   "studio.discardConfirm": "There are unsaved changes.",

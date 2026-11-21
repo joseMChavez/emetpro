@@ -670,6 +670,7 @@ const es = {
   "remote.plan": "Plan · {name}",
 
   // Media Studio (D-029)
+  "studio.dropTroubled": "Quitar los tiempos con errores",
   "studio.notSynced": "Esta canción todavía no tiene tiempos: la pista suena de corrido y no sigue a la pantalla. Márcalos en Editar → Sincronizar con la pista.",
   "studio.badge.unsynced": "sin sincronizar",
   "studio.discardConfirm": "Hay cambios sin guardar.",

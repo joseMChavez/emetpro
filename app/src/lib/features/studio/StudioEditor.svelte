@@ -9,8 +9,8 @@
   import { player } from "./player.svelte";
   import { issuePlace, issueText, kindName, sectionName } from "./names";
   import { parseLyrics } from "./parse";
-  import { expand, newId, sectionOf, sectionText, SECTION_KINDS, slideText, studioContent, withText } from "./song";
-  import { clearStart, formatTime, markStart, slideAt, slideStarts } from "./timeline";
+  import { dropTroubledTimings, expand, hasTroubledTimings, newId, sectionOf, sectionText, SECTION_KINDS, slideText, studioContent, withText } from "./song";
+  import { clearStart, formatTime, markInSequence, markStart, slideAt, slideStarts } from "./timeline";
 
   let {
     initial,
@@ -196,7 +196,7 @@
 
   function mark() {
     if (!ownTrack || next >= expanded.length) return;
-    const updated = markStart(snapshot(), expanded, next, player.now());
+    const updated = markInSequence(snapshot(), expanded, next, player.now());
     song.order = updated.order;
     next++;
     issues = null;
@@ -251,6 +251,14 @@
 
   async function validate() {
     issues = await platform.studioValidate(snapshot());
+  }
+
+  /** Quita solo las marcas con errores y vuelve a revisar: el resto de la sincronización se conserva. */
+  async function dropTroubled() {
+    if (!issues) return;
+    song.order = dropTroubledTimings(snapshot(), issues).order;
+    dirty = true;
+    await validate();
   }
 
   async function save() {
@@ -447,6 +455,9 @@
         <p class="ok">✓ {t("studio.valid")}</p>
       {:else}
         <p class="small">{errors.length > 0 ? t("studio.hasErrors") : t("studio.onlyWarnings")}</p>
+        {#if hasTroubledTimings(issues)}
+          <button type="button" class="btn" onclick={dropTroubled}>{t("studio.dropTroubled")}</button>
+        {/if}
         <ul>
           {#each issues as issue, i (i)}
             <li class={issue.severity}>
