@@ -31,7 +31,8 @@
   import { applyMark, clearMarks, type MarkPart } from "$lib/features/marks/marks";
   import { screenKey } from "$lib/features/output/history.svelte";
   import StudioTransport from "$lib/features/studio/StudioTransport.svelte";
-  import { armAutoplay, finishSong, goTo as studioGoTo, sectionTarget, toggleLoop, wordOnScreen } from "$lib/features/studio/live.svelte";
+  import BehindTrack from "$lib/features/studio/BehindTrack.svelte";
+  import { armAutoplay, finishSong, goTo as studioGoTo, keepInBackground, sectionTarget, toggleLoop, wordOnScreen } from "$lib/features/studio/live.svelte";
   import { player as studioPlayer } from "$lib/features/studio/player.svelte";
 
   const MONITOR_POLL_MS = 2000;
@@ -372,6 +373,7 @@
       case "trackToggle": return studioPlayer.toggle();
       case "trackLoop": return toggleLoop();
       case "trackFinish": return finishSong();
+      case "trackBackground": return keepInBackground();
       case "studioSection": {
         const n = sectionTarget(command.id);
         if (n !== null) goLive(n);
@@ -500,6 +502,8 @@
       <span class="dot" aria-hidden="true"></span>
       {output.open ? t("status.live", { monitor: output.monitorName ?? "" }) : t("status.closed")}
     </p>
+    <!-- Una canción sigue sonando con otra cosa en pantalla: se ve y se para desde cualquier pestaña. -->
+    <BehindTrack compact />
     {#if obs.connected && obs.status}
       {@const s = obs.status.streaming}
       <button class="status stream-pill" class:on={s.active} class:warn={s.reconnecting} onclick={() => chooseView("stream")}>

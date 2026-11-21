@@ -39,6 +39,8 @@ pub enum Command {
     TrackLoop,
     /// Terminar la canción con un fundido.
     TrackFinish,
+    /// Dejar sonando de fondo, más suave, la canción que siguió sonando al poner otra cosa en pantalla.
+    TrackBackground,
     /// Saltar a una sección de la canción en pantalla, por su id.
     StudioSection { id: String },
 }
@@ -143,6 +145,7 @@ mod tests {
         assert_eq!(Command::parse(r#"{"type":"trackToggle"}"#), Some(Command::TrackToggle));
         assert_eq!(Command::parse(r#"{"type":"trackLoop"}"#), Some(Command::TrackLoop));
         assert_eq!(Command::parse(r#"{"type":"trackFinish"}"#), Some(Command::TrackFinish));
+        assert_eq!(Command::parse(r#"{"type":"trackBackground"}"#), Some(Command::TrackBackground));
         assert_eq!(Command::parse(r#"{"type":"studioSection","id":"coro"}"#), Some(Command::StudioSection { id: "coro".into() }));
         assert_eq!(Command::parse(r#"{"type":"studioSection","id":""}"#), None);
         assert_eq!(Command::parse(r#"{"type":"goTo","n":0}"#), None);

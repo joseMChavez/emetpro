@@ -503,7 +503,17 @@
           {@const studio = status.studio}
           <!-- Media Studio (D-029): la pista sigue a lo que se elija aquí o en la consola. -->
           <div class="studio">
-            {#if studio.playing !== null}
+            {#if studio.behind}
+              <!-- Otra cosa en pantalla y la canción sigue sonando: terminarla o dejarla de fondo, como en la consola. -->
+              <p class="studio-behind">{t(studio.behind.asking ? "studio.behind.question" : studio.behind.soft ? "studio.behind.soft" : "studio.behind.playing", { title: studio.behind.title })}</p>
+              {#if studio.behind.asking}
+                <div class="studio-row">
+                  <button class="btn primary big play" disabled={connection !== "open"} onclick={() => command({ type: "trackFinish" })}>{t("studio.behind.finish")}</button>
+                  <button class="btn big" disabled={connection !== "open"} onclick={() => command({ type: "trackBackground" })}>{t("studio.behind.background")}</button>
+                </div>
+              {/if}
+            {/if}
+            {#if studio.playing !== null && !studio.behind?.asking}
               <div class="studio-row">
                 <button class="btn primary big play" disabled={connection !== "open"} onclick={() => command({ type: "trackToggle" })}>
                   {studio.playing ? `⏸ ${t("studio.pause")}` : `▶ ${t("studio.play")}`}
@@ -889,6 +899,7 @@
   .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .studio { display: flex; flex-direction: column; gap: 8px; }
   .studio-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .studio-behind { margin: 0; font-weight: 700; color: var(--live); }
   .studio-row .play { flex: 1; min-width: 140px; min-height: 56px; font-size: 18px; }
   .studio-row .btn[aria-pressed="true"] { border-color: var(--live); background: var(--live-soft); }
   .studio-sections { display: flex; flex-wrap: wrap; gap: 6px; }

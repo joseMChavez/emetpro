@@ -12,7 +12,7 @@ import { openPlan } from "$lib/features/plans/plans.svelte";
 import { detail, icon, problem, session, title } from "$lib/features/plans/items.svelte";
 import { pageCount, pageJpeg } from "$lib/features/output/pdf";
 import type { RemoteCanvas, RemoteItem, RemoteLive, RemotePlan, RemoteStatus, RemoteStrip, RemoteStudio } from "./protocol";
-import { onScreen as studioOnScreen, sectionsOnScreen, trackReady as studioTrackReady } from "$lib/features/studio/live.svelte";
+import { behind as studioBehind, behindStatus, onScreen as studioOnScreen, sectionsOnScreen, trackReady as studioTrackReady } from "$lib/features/studio/live.svelte";
 import { player as studioPlayer } from "$lib/features/studio/player.svelte";
 import { sectionName } from "$lib/features/studio/names";
 import { layerKey } from "./board";
@@ -235,7 +235,12 @@ function canvasOf(content: OutputContent, description: string): RemoteCanvas | n
 /** La canción de Media Studio en pantalla, para el teléfono: la pista y sus secciones. */
 function studioOf(): RemoteStudio | null {
   const song = studioOnScreen.song;
-  if (!song) return null;
+  const background = behindStatus();
+  if (!song) {
+    // Otra cosa en pantalla y la canción sigue sonando: el teléfono también la puede parar o dejar de fondo.
+    if (!background) return null;
+    return { playing: studioPlayer.playing, finishing: studioPlayer.finishing, loop: studioBehind.loop, sections: [], behind: background };
+  }
   void studioOnScreen.index;
   return {
     playing: song.mode === "track" && studioTrackReady() ? studioPlayer.playing : null,

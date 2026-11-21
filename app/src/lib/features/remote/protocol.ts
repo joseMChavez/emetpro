@@ -28,6 +28,8 @@ export type RemoteCommand =
   | { type: "trackLoop" }
   /** Terminar la canción con un fundido. */
   | { type: "trackFinish" }
+  /** Dejar de fondo, más suave, la canción que sigue sonando tras poner otra cosa en pantalla. */
+  | { type: "trackBackground" }
   /** Saltar a una sección de la canción en pantalla (la pista la sigue). */
   | { type: "studioSection"; id: string };
 
@@ -98,6 +100,11 @@ export interface RemoteStudio {
   finishing: boolean;
   loop: boolean;
   sections: { id: string; name: string; current: boolean }[];
+  /**
+   * Se puso otra cosa en pantalla y la canción sigue sonando: su título. `asking`: todavía no se eligió entre
+   * terminarla o dejarla de fondo; `soft`: suena de fondo, más suave.
+   */
+  behind?: { title: string; asking: boolean; soft: boolean } | null;
 }
 
 /** Lo que la consola publica cada vez que cambia algo. */

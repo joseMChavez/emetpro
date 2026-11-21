@@ -8,6 +8,10 @@ import { platform } from "$lib/platform";
 const FADE = 0.03;
 /** Al reproducir y al pausar: la música entra y sale como con un músico, no de golpe. */
 const SOFT = 0.25;
+/** De fondo: el volumen mientras en pantalla hay otra cosa (la cita, un anuncio), como una banda que acompaña bajito. */
+const BACKGROUND = 0.3;
+/** Al pasar a fondo y al volver: un cambio de volumen que no se note como un corte. */
+const SOFTEN = 1.5;
 /** «Terminar»: el final de la canción baja despacio, como cuando la banda termina. */
 const FINISH = 4;
 
@@ -31,6 +35,8 @@ class Player {
    * canción en pantalla siempre suena a 1. Los tiempos siguen siendo los de la pista.
    */
   rate = $state(1);
+  /** Suena de fondo, más suave, mientras en pantalla hay otra cosa. */
+  background = $state(false);
 
   private ctx: AudioContext | null = null;
   /** Volumen general: los fundidos de reproducir, pausar y terminar (cada trozo tiene el suyo para los saltos). */
@@ -118,7 +124,7 @@ class Player {
     if (!this.buffer || !this.ctx || this.playing) return;
     if (this.offset * 1000 >= this.durationMs - 50) this.offset = 0;
     await this.ctx.resume();
-    this.ramp(1, SOFT, 0);
+    this.ramp(this.level(), SOFT, 0);
     this.startSource(this.offset);
     this.playing = true;
     this.tick();
@@ -166,6 +172,18 @@ class Player {
     gain.cancelScheduledValues(at);
     gain.setValueAtTime(from ?? gain.value, at);
     gain.linearRampToValueAtTime(to, at + seconds);
+  }
+
+  /** El volumen normal: el de fondo o el completo. */
+  private level(): number {
+    return this.background ? BACKGROUND : 1;
+  }
+
+  /** Más suave (de fondo) o al volumen completo, con un cambio gradual. */
+  setBackground(on: boolean) {
+    if (on === this.background) return;
+    this.background = on;
+    if (this.playing && !this.finishing) this.ramp(this.level(), SOFTEN);
   }
 
   /** Cambia la velocidad sin cortar: sigue desde donde iba. */
@@ -227,7 +245,7 @@ class Player {
     // Que el operador salte durante el fundido final es seguir cantando: vuelve el volumen.
     if (this.finishing && !automatic) {
       this.finishing = false;
-      this.ramp(1, SOFT);
+      this.ramp(this.level(), SOFT);
     }
     if (this.playing) this.startSource(this.offset);
     this.emit();

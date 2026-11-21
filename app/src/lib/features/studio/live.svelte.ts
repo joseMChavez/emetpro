@@ -18,6 +18,38 @@ export const onScreen = $state({
   loop: false,
 });
 
+/**
+ * Se puso otra cosa en pantalla (una cita, un anuncio) mientras sonaba la canción: sigue sonando y la consola
+ * pregunta si terminarla o dejarla de fondo, más suave. Si se estaba repitiendo una sección, de fondo se sigue
+ * repitiendo (la banda que se queda en el coro mientras se ora).
+ */
+export const behind = $state({
+  /** El título de la canción que sigue sonando, o null. */
+  title: null as string | null,
+  /** Todavía no se eligió entre terminarla y dejarla de fondo. */
+  asking: false,
+  /** Repetir de fondo el tramo de la sección que estaba en pantalla. */
+  loop: false,
+  range: null as { start: number; end: number } | null,
+});
+
+/** Se pidió terminar la canción de fondo: al quedar en pausa tras el fundido, el aviso se quita. */
+let endingBehind = false;
+
+function clearBehind() {
+  endingBehind = false;
+  behind.title = null;
+  behind.asking = false;
+  behind.loop = false;
+  behind.range = null;
+}
+
+/** Dejar de fondo, más suave, la canción que siguió sonando. */
+export function keepInBackground() {
+  behind.asking = false;
+  player.setBackground(true);
+}
+
 /** Canción recién enviada a pantalla: al llegar, su pista empieza a sonar (como un video). */
 let autoplay: string | null = null;
 
@@ -62,9 +94,23 @@ export function trackReady(): boolean {
 /** Sigue lo que está en pantalla. Al llegar una canción con pista, la carga en pausa en su diapositiva. */
 export function follow(content: OutputContent) {
   if (content.kind !== "text" || !content.studio) {
+    // Sonaba la canción y se puso otra cosa: sigue sonando, y se pregunta qué hacer.
+    if (onScreen.song && player.playing && trackReady() && !player.finishing) {
+      const occ = occurrence(cursor);
+      const first = occ && ranges[occ.first];
+      const last = occ && ranges[occ.last];
+      behind.title = onScreen.song.title;
+      behind.asking = !player.background;
+      behind.range = first && last && last.end > first.start ? { start: first.start, end: last.end } : null;
+      behind.loop = onScreen.loop && behind.range !== null;
+    }
     onScreen.song = null;
+    onScreen.loop = false;
     return;
   }
+  // Vuelve una canción a pantalla: lo de fondo termina ahí, y suena al volumen completo.
+  clearBehind();
+  player.setBackground(false);
   const song = studio.songs.find((s) => s.id === content.studio) ?? null;
   const changed = song?.id !== onScreen.song?.id;
   if (song !== onScreen.song) {
@@ -136,12 +182,31 @@ function occurrence(i: number): { first: number; last: number } | null {
 /** Terminar la canción con el fundido: también deja de repetir. */
 export function finishSong() {
   onScreen.loop = false;
+  behind.loop = false;
+  behind.asking = false;
+  if (!onScreen.song && behind.title !== null) endingBehind = true;
   player.finish();
 }
 
 /** Repetir (o dejar de repetir) la sección en pantalla. */
 export function toggleLoop() {
-  onScreen.loop = !onScreen.loop && onScreen.song !== null;
+  if (!onScreen.song) {
+    // De fondo: repetir el tramo que estaba en pantalla al salir la canción.
+    behind.loop = !behind.loop && behind.range !== null;
+    return;
+  }
+  onScreen.loop = !onScreen.loop;
+}
+
+/** La canción de fondo, para el teléfono y la barra de la consola: null si no hay. */
+export function behindStatus(): { title: string; asking: boolean; soft: boolean } | null {
+  return behind.title === null ? null : { title: behind.title, asking: behind.asking, soft: player.background };
+}
+
+/** Quitar el aviso de la canción de fondo (ya en pausa). */
+export function dismissBehind() {
+  clearBehind();
+  player.setBackground(false);
 }
 
 /** La canción en pantalla tiene algún tiempo marcado: si no, la pista suena de corrido y no sigue a la pantalla. */
@@ -206,6 +271,13 @@ export function wordOnScreen(content: OutputContent): number | null {
 
 /** Cada aviso de la pista mientras suena (cada cuadro, y cada 100 ms aunque la consola esté tapada). */
 function onTime(ms: number) {
+  if (!onScreen.song && behind.title !== null) {
+    // Terminó sola (o con «Terminar»): ya no hay nada de fondo.
+    if (!player.playing && (endingBehind || ms >= player.durationMs - 50)) clearBehind();
+    const range = behind.range;
+    if (player.playing && behind.loop && range && ms >= range.end - 60 && ms < range.end + 1000) player.seek(range.start, true);
+    return;
+  }
   sendTime(ms);
   if (!show || !player.playing || !trackReady()) return;
   // La consola estaba ocupada enviando: se vuelve a intentar.

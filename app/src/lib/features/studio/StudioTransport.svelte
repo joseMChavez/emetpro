@@ -8,6 +8,7 @@
   import { attach, finishSong, follow, goTo, onScreen, sectionTarget, sectionsOnScreen, synced, toggleLoop, trackReady } from "./live.svelte";
   import { player } from "./player.svelte";
   import { sectionName } from "./names";
+  import BehindTrack from "./BehindTrack.svelte";
   import { sectionOf } from "./song";
   import { formatTime } from "./timeline";
 
@@ -97,12 +98,9 @@
       {/each}
     </div>
   </div>
-{:else if player.playing}
-  <!-- Se puso otra cosa en pantalla mientras sonaba una pista: sigue sonando, y aquí se puede parar. -->
-  <div class="studio-live transport">
-    <button class="btn" onclick={() => player.pause()}>⏸ {t("studio.pause")}</button>
-    <span class="muted small">{t("studio.stillPlaying")}</span>
-  </div>
+{:else}
+  <!-- Se puso otra cosa en pantalla mientras sonaba la canción: terminarla o dejarla de fondo. -->
+  <BehindTrack />
 {/if}
 
 <style>
