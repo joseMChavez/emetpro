@@ -22,6 +22,7 @@ pub fn plugin() -> TauriPlugin<Wry> {
             commands::studio_pick_audio,
             commands::studio_read_audio,
             commands::studio_open_reference,
+            commands::studio_save_svg,
         ])
         .build()
 }

@@ -230,7 +230,9 @@
 
   let backdropPath = $derived.by(() => {
     if (!lyric && !clock && content.kind !== "empty") return null;
-    return ((content.kind === "text" || content.kind === "timer") && content.background) || style.backgroundImage || null;
+    // Una diapositiva con su propio fondo (la sección de una canción de Media Studio) tapa el de la canción.
+    const own = content.kind === "text" ? content.backgrounds?.[content.index] : null;
+    return own || ((content.kind === "text" || content.kind === "timer") && content.background) || style.backgroundImage || null;
   });
   let backdrop = $derived(backdropPath ? playableUrl(backdropPath) || null : null);
   /** Un fondo de video va en bucle y sin sonido; en las miniaturas se ve su primer cuadro. */
@@ -482,7 +484,10 @@
         }}
       ></video>
     {:else}
-      <img class="backdrop" class:drift={anim.background === "slow"} src={backdrop} alt="" />
+      <!-- Al cambiar de fondo (otra sección con el suyo), el nuevo entra con un fundido. -->
+      {#key backdrop}
+        <img class="backdrop" class:drift={anim.background === "slow"} class:fade-in={animated} src={backdrop} alt="" />
+      {/key}
     {/if}
     <div class="shade"></div>
   {/if}
@@ -671,6 +676,9 @@
   }
   /* Movimiento lento de la imagen de fondo (D-024): se acerca y se desplaza un poco, ida y vuelta. */
   .backdrop.drift { animation: drift 40s ease-in-out infinite alternate; }
+  .backdrop.fade-in { animation: backdrop-in 700ms ease-out; }
+  .backdrop.fade-in.drift { animation: backdrop-in 700ms ease-out, drift 40s ease-in-out infinite alternate; }
+  @keyframes backdrop-in { from { opacity: 0; } }
   @keyframes drift {
     from { transform: scale(1.02) translate(0, 0); }
     to { transform: scale(1.14) translate(-2.5%, -1.5%); }

@@ -1,5 +1,12 @@
 // Biblioteca de Media Studio (D-029): las canciones guardadas en la base; aquí, una copia para la interfaz.
 import { platform, type MediaSong, type StudioSaveOutcome } from "$lib/platform";
+import { songBackgrounds } from "./song";
+
+/** El permiso para cargar los fondos no sobrevive a un reinicio: se pide para los de las canciones. */
+function allowBackgrounds(songs: MediaSong[]) {
+  const paths = [...new Set(songs.flatMap(songBackgrounds))];
+  if (paths.length > 0) platform.allowBackgrounds(paths).catch(() => {});
+}
 
 export const studio = $state({
   songs: [] as MediaSong[],
@@ -13,6 +20,7 @@ function failed(action: string, e: unknown) {
 export async function loadStudio() {
   try {
     studio.songs = await platform.studioList();
+    allowBackgrounds(studio.songs);
   } catch (e) {
     failed("leer", e);
   } finally {
@@ -24,6 +32,7 @@ export async function loadStudio() {
 export async function saveStudioSong(song: MediaSong): Promise<StudioSaveOutcome> {
   const outcome = await platform.studioSave(song);
   if (outcome.saved) {
+    allowBackgrounds([song]);
     const i = studio.songs.findIndex((s) => s.id === song.id);
     if (i >= 0) studio.songs[i] = song;
     else studio.songs.push(song);

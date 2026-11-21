@@ -35,6 +35,8 @@ export type OutputContent =
       rich?: RichSlide[];
       /** Canción de Media Studio de la que salen (D-029): la consola la sigue con su pista. */
       studio?: string | null;
+      /** Fondo propio de cada diapositiva (el de su sección en Media Studio); null = `background`. */
+      backgrounds?: (string | null)[];
     }
   | { kind: "image"; path: string }
   | {
@@ -220,6 +222,8 @@ export interface SongSection {
   /** Vacío = el nombre de su tipo. */
   label: string;
   slides: SongSlide[];
+  /** Fondo propio de la sección; null = el de la canción. */
+  background?: string | null;
 }
 
 export interface LineCue {
@@ -566,6 +570,8 @@ export interface Platform {
   studioDelete(id: string): Promise<void>;
   /** Elige una pista (audio, o un video del que se saca el audio) y la deja en la carpeta de la app; null si se cancela. */
   studioPickAudio(title: string, filterName: string): Promise<{ path: string; name: string; fromVideo: boolean } | null>;
+  /** Guarda un fondo animado generado (SVG) en la carpeta de la app y devuelve su ruta. */
+  studioSaveSvg(svg: string): Promise<string>;
   /** Abre el enlace de referencia en el navegador (solo http/https). */
   studioOpenReference(url: string): Promise<void>;
   /** Los bytes de una pista de la carpeta de la app, para decodificarla. */

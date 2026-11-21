@@ -34,8 +34,11 @@ export function slideText(slide: SongSlide | null): string {
 
 /** La canción lista para «Preparado», desde la primera diapositiva. Una instrumental es una diapositiva vacía. */
 export function studioContent(song: MediaSong, credit: string): OutputContent {
-  const slides = expand(song).map((e) => slideText(e.slide));
+  const expanded = expand(song);
+  const slides = expanded.map((e) => slideText(e.slide));
   if (slides.length === 0) return { kind: "empty" };
+  // El fondo de cada sección, si alguna lo tiene: en pantalla cambia con la sección.
+  const backgrounds = expanded.map((e) => e.section.background ?? null);
   return {
     kind: "text",
     slides,
@@ -43,6 +46,7 @@ export function studioContent(song: MediaSong, credit: string): OutputContent {
     credit,
     background: song.background,
     studio: song.id,
+    ...(backgrounds.some((b) => b !== null) ? { backgrounds } : {}),
     ...(song.animation ? { animation: { ...song.animation } } : {}),
   };
 }
@@ -110,4 +114,9 @@ export function dropTroubledTimings(song: MediaSong, issues: SongIssue[]): Media
 /** Hay errores de tiempos que `dropTroubledTimings` puede quitar. */
 export function hasTroubledTimings(issues: SongIssue[]): boolean {
   return issues.some((i) => i.severity === "error" && i.at.entry);
+}
+
+/** Todos los fondos que usa la canción (el suyo y los de sus secciones). */
+export function songBackgrounds(song: MediaSong): string[] {
+  return [song.background, ...song.sections.map((s) => s.background)].filter((b): b is string => !!b);
 }

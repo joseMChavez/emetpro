@@ -8,6 +8,7 @@
   import { onScreen } from "./live.svelte";
   import { player } from "./player.svelte";
   import { issuePlace, issueText, kindName, sectionName } from "./names";
+  import BackgroundField from "./BackgroundField.svelte";
   import { parseLyrics } from "./parse";
   import { dropTroubledTimings, expand, hasTroubledTimings, newId, sectionOf, sectionText, SECTION_KINDS, slideText, studioContent, withText } from "./song";
   import { clearStart, formatTime, markInSequence, markStart, slideAt, slideStarts } from "./timeline";
@@ -339,6 +340,7 @@
       <button type="button" class="btn reference-open" onclick={openReference} disabled={!/^https?:\/\/\S{4,}$/i.test(song.reference.trim())}>{t("studio.openReference")}</button>
     </div>
     <p class="muted small">{t("studio.referenceHint")}</p>
+    <BackgroundField value={song.background} inherit={t("studio.bg.inheritGeneral")} onchange={(path) => ((song.background = path), changed())} {onerror} />
   </fieldset>
 
   <section class="block">
@@ -367,6 +369,7 @@
           <span class="muted small">{section.slides.length === 0 ? t("studio.instrumental") : tCount("text.count", section.slides.length)}</span>
           <button type="button" class="icon-btn" onclick={() => removeSection(section.id)} aria-label={t("studio.removeSection")} title={t("studio.removeSection")}>✕</button>
         </div>
+        <BackgroundField compact value={section.background} inherit={t("studio.bg.inheritSong")} onchange={(path) => ((section.background = path), changed())} {onerror} />
         <textarea class="field" rows={Math.min(10, Math.max(2, (drafts[section.id] ?? sectionText(section)).split("\n").length + 1))} value={drafts[section.id] ?? sectionText(section)} oninput={(e) => setText(section.id, e.currentTarget.value)} placeholder={t("studio.sectionPlaceholder")} aria-label={sectionName(song, section)}></textarea>
       </div>
     {/each}

@@ -83,7 +83,7 @@ pub fn close_output(app: AppHandle) -> Result<(), CommandError> {
 pub fn set_output_content(
     app: AppHandle,
     state: State<'_, OutputStore>,
-    content: OutputContent,
+    mut content: OutputContent,
 ) -> Result<OutputState, CommandError> {
     let deck_len = match &content {
         OutputContent::Text { slides, index, .. } => Some((slides.len(), *index)),
@@ -94,8 +94,21 @@ pub fn set_output_content(
     let no_sheet = matches!(&content, OutputContent::Board { sheet } if sheet.is_empty() || sheet.len() > 64);
     // Con formato, una diapositiva con formato por cada una de texto.
     let rich_mismatch = matches!(&content, OutputContent::Text { slides, rich: Some(rich), .. } if rich.len() != slides.len());
-    if empty_timer || no_sheet || rich_mismatch || deck_len.is_some_and(|(len, index)| index >= len) {
+    let backgrounds_mismatch =
+        matches!(&content, OutputContent::Text { slides, backgrounds: Some(b), .. } if b.len() != slides.len());
+    if empty_timer || no_sheet || rich_mismatch || backgrounds_mismatch || deck_len.is_some_and(|(len, index)| index >= len) {
         return Err(CommandError::InvalidContent);
+    }
+    // El fondo de una diapositiva que ya no existe (otro equipo, archivo movido) se quita: queda el de la canción.
+    if let OutputContent::Text { backgrounds: Some(backgrounds), .. } = &mut content {
+        for background in backgrounds.iter_mut() {
+            if let Some(path) = background.as_deref() {
+                let path = Path::new(path);
+                if !path.is_file() || allow_media(&app, path).is_err() {
+                    *background = None;
+                }
+            }
+        }
     }
     if let Some(path) = content.media_path() {
         let path = Path::new(path);

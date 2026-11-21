@@ -57,6 +57,7 @@ export const tauriPlatform: Platform = {
   studioDelete: (id) => invoke("plugin:studio|studio_delete", { id }),
   studioPickAudio: (title, filterName) => invoke("plugin:studio|studio_pick_audio", { title, filterName }),
   studioReadAudio: (path) => invoke("plugin:studio|studio_read_audio", { path }),
+  studioSaveSvg: (svg) => invoke("plugin:studio|studio_save_svg", { svg }),
   studioOpenReference: (url) => invoke("plugin:studio|studio_open_reference", { url }),
   plansList: () => invoke("plugin:plans|plans_list"),
   planSave: (plan) => invoke("plugin:plans|plan_save", { plan }),

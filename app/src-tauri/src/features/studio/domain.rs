@@ -82,6 +82,9 @@ pub struct SongSection {
     pub label: String,
     #[serde(default)]
     pub slides: Vec<SongSlide>,
+    /// Fondo propio de la sección (un coro más luminoso); None = el de la canción.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background: Option<String>,
 }
 
 /// Una línea dentro de la pista. `words[i]` es el comienzo de la palabra i de la línea (cada tramo sin espacios,
@@ -495,7 +498,7 @@ mod tests {
     }
 
     fn section(id: &str, kind: SectionKind, slides: Vec<SongSlide>) -> SongSection {
-        SongSection { id: id.into(), kind, label: String::new(), slides }
+        SongSection { id: id.into(), kind, label: String::new(), slides, background: None }
     }
 
     fn entry(id: &str, section: &str, timing: Option<Timing>) -> OrderEntry {

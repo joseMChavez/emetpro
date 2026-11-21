@@ -7,6 +7,9 @@ use tauri_plugin_opener::OpenerExt;
 
 use super::domain::{is_web_link, Issue, MediaSong};
 use super::AUDIO_DIR;
+use sha2::Digest;
+
+use crate::core::assets::allow_media;
 use crate::core::db::{with_store, Db};
 use crate::core::error::{internal, CommandError};
 use crate::core::picker::{self, dialog_extensions};
@@ -140,6 +143,31 @@ pub async fn studio_pick_audio(app: AppHandle, title: String, filter_name: Strin
         return Err(CommandError::InvalidContent);
     };
     Ok(Some(PickedAudio { path: track.to_string_lossy().into_owned(), name, from_video }))
+}
+
+/// Lo más grande que puede pesar un fondo generado: las plantillas ocupan unos pocos KB.
+const MAX_SVG: usize = 512 * 1024;
+
+/// Guarda un fondo animado generado por la interfaz (studio/svgbg.ts) en `fondos/generados/<huella>.svg` y lo
+/// permite para la salida. Mismo SVG, mismo archivo. Se muestra con <img>, donde un SVG no ejecuta scripts.
+#[tauri::command]
+pub fn studio_save_svg(app: AppHandle, svg: String) -> Result<String, CommandError> {
+    let text = svg.trim_start();
+    if svg.len() > MAX_SVG || !(text.starts_with("<svg") || text.starts_with("<?xml")) || !svg.contains("</svg>") {
+        return Err(CommandError::InvalidContent);
+    }
+    let dir = app.path().app_data_dir().map_err(internal)?.join("fondos").join("generados");
+    let hash = format!("{:x}", sha2::Sha256::digest(svg.as_bytes()));
+    let path = dir.join(format!("{}.svg", &hash[..16]));
+    if !path.is_file() {
+        std::fs::create_dir_all(&dir).map_err(|e| CommandError::CopyFailed { file: path.display().to_string(), reason: e.to_string() })?;
+        let partial = path.with_extension("svg.part");
+        std::fs::write(&partial, svg.as_bytes())
+            .and_then(|_| std::fs::rename(&partial, &path))
+            .map_err(|e| CommandError::CopyFailed { file: path.display().to_string(), reason: e.to_string() })?;
+    }
+    allow_media(&app, &path)?;
+    Ok(path.to_string_lossy().into_owned())
 }
 
 /// Abre el enlace de referencia de una canción en el navegador. Solo direcciones web.
