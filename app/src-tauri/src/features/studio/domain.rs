@@ -143,6 +143,10 @@ pub struct MediaSong {
     pub order: Vec<OrderEntry>,
     #[serde(default)]
     pub rights: Rights,
+    /// Enlace para escucharla al preparar (YouTube, la página del artista). Solo se abre en el navegador:
+    /// no se descarga ni se reproduce dentro de la app (condiciones de YouTube y derechos de autor).
+    #[serde(default)]
+    pub reference: String,
     /// Imagen o video de fondo propio; tapa el fondo general.
     #[serde(default)]
     pub background: Option<String>,
@@ -166,6 +170,8 @@ pub enum Severity {
 #[serde(rename_all = "camelCase")]
 pub enum IssueCode {
     MissingTitle,
+    /// El enlace de referencia no es una dirección web (http o https).
+    InvalidReference,
     MissingId,
     DuplicateId,
     EmptyOrder,
@@ -288,6 +294,9 @@ impl MediaSong {
     fn check_structure(&self, issues: &mut Issues) {
         if self.title.trim().is_empty() {
             issues.add(IssueCode::MissingTitle, Location::default());
+        }
+        if !self.reference.trim().is_empty() && !is_web_link(&self.reference) {
+            issues.add(IssueCode::InvalidReference, Location::default());
         }
         let mut ids = HashSet::new();
         let mut check_id = |id: &str, at: Location, issues: &mut Issues| {
@@ -430,6 +439,13 @@ fn check_slide(entry: &str, slide: &SongSlide, section: &str, cue: &SlideCue, en
     }
 }
 
+/// Una dirección web, y nada más: ni archivos del equipo ni otros esquemas.
+pub fn is_web_link(text: &str) -> bool {
+    let text = text.trim();
+    let lower = text.to_lowercase();
+    (lower.starts_with("https://") || lower.starts_with("http://")) && !text.contains(char::is_whitespace) && text.len() > 10
+}
+
 #[derive(Default)]
 struct Issues(Vec<Issue>);
 
@@ -501,6 +517,7 @@ mod tests {
                 entry("e4", "coro", timing(60_000, vec![cue("c1", 60_000, vec![]), cue("c2", 70_000, vec![])])),
             ],
             rights: Rights::default(),
+            reference: String::new(),
             background: None,
             animation: None,
         }
@@ -651,6 +668,17 @@ mod tests {
         // Por línea, sin palabras, también vale.
         words(&mut song).clear();
         assert_eq!(codes(&song), vec![]);
+    }
+
+    #[test]
+    fn enlace_de_referencia() {
+        let mut song = sample();
+        song.reference = "https://www.youtube.com/watch?v=abc".into();
+        assert_eq!(codes(&song), vec![]);
+        for bad in ["file:///etc/passwd", "javascript:alert(1)", "youtube.com/watch", "https://a b.com/x"] {
+            song.reference = bad.into();
+            assert_eq!(codes(&song), vec![IssueCode::InvalidReference], "{bad}");
+        }
     }
 
     #[test]

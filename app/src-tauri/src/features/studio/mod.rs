@@ -21,6 +21,7 @@ pub fn plugin() -> TauriPlugin<Wry> {
             commands::studio_delete,
             commands::studio_pick_audio,
             commands::studio_read_audio,
+            commands::studio_open_reference,
         ])
         .build()
 }

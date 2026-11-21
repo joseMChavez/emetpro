@@ -25,7 +25,8 @@
     onerror: (message: Message) => void;
   } = $props();
 
-  let song = $state<MediaSong>(untrack(() => structuredClone($state.snapshot(initial)) as MediaSong));
+  // Los campos que una canción más vieja no traiga empiezan vacíos.
+  let song = $state<MediaSong>(untrack(() => ({ reference: "", ...(structuredClone($state.snapshot(initial)) as MediaSong) })));
   let issues = $state<SongIssue[] | null>(null);
   let saving = $state(false);
   let pasteOpen = $state(untrack(() => initial.sections.length === 0));
@@ -66,8 +67,12 @@
 
   // ---- Pista ----
 
+  /** Mientras se elige la pista (sacar el audio de un video puede tardar unos segundos). */
+  let picking = $state(false);
+
   async function pickAudio() {
-    if (liveBusy) return;
+    if (liveBusy || picking) return;
+    picking = true;
     try {
       const picked = await platform.studioPickAudio(t("studio.pickAudio"), t("studio.audioFilter"));
       if (!picked) return;
@@ -79,6 +84,16 @@
       song.audio = { path: picked.path, name: picked.name, durationMs: duration };
       song.mode = "track";
       changed();
+    } catch (e) {
+      onerror(toMessage(e));
+    } finally {
+      picking = false;
+    }
+  }
+
+  async function openReference() {
+    try {
+      await platform.studioOpenReference(song.reference.trim());
     } catch (e) {
       onerror(toMessage(e));
     }
@@ -275,10 +290,19 @@
       {:else}
         <span class="muted small">{t("studio.noTrack")}</span>
       {/if}
-      <button type="button" class="btn" onclick={pickAudio} disabled={liveBusy}>{t(song.audio ? "studio.changeTrack" : "studio.pickTrack")}</button>
+      <button type="button" class="btn" onclick={pickAudio} disabled={liveBusy || picking}>{t(song.audio ? "studio.changeTrack" : "studio.pickTrack")}</button>
       {#if song.audio && song.mode === "live"}<span class="muted small">{t("studio.trackKept")}</span>{/if}
     </div>
+    {#if picking}<p class="muted small" role="status">{t("studio.preparingTrack")}</p>{/if}
     {#if liveBusy}<p class="muted small">{t("studio.liveBusy")}</p>{/if}
+    <div class="row">
+      <label class="field-row grow">
+        <span class="label">{t("studio.reference")}</span>
+        <input class="field" type="url" bind:value={song.reference} oninput={() => (issues = null)} placeholder="https://www.youtube.com/watch?v=…" />
+      </label>
+      <button type="button" class="btn reference-open" onclick={openReference} disabled={!/^https?:\/\/\S{4,}$/i.test(song.reference.trim())}>{t("studio.openReference")}</button>
+    </div>
+    <p class="muted small">{t("studio.referenceHint")}</p>
   </fieldset>
 
   <section class="block">
@@ -457,4 +481,5 @@
   .ok { margin: 0; color: var(--ok, var(--accent)); font-weight: 600; }
   .actions { position: sticky; bottom: 0; padding: 8px 0; background: var(--surface); }
   summary { cursor: pointer; }
+  .reference-open { align-self: flex-end; }
 </style>

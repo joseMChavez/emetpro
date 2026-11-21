@@ -254,12 +254,14 @@ export interface MediaSong {
   sections: SongSection[];
   order: OrderEntry[];
   rights: SongRights;
+  /** Enlace para escucharla al preparar (YouTube…). Solo se abre en el navegador. */
+  reference: string;
   background: string | null;
   animation?: TextAnimation | null;
 }
 
 export type IssueCode =
-  | "missingTitle" | "missingId" | "duplicateId" | "emptyOrder" | "unknownSection" | "trackWithoutAudio" | "invalidAudio"
+  | "missingTitle" | "invalidReference" | "missingId" | "duplicateId" | "emptyOrder" | "unknownSection" | "trackWithoutAudio" | "invalidAudio"
   | "timeOutOfTrack" | "entriesOutOfOrder" | "unknownSlide" | "duplicateCue" | "slidesOutOfOrder" | "slideOutsideEntry"
   | "linesOutOfOrder" | "lineOutsideSlide" | "lineEndBeforeStart" | "linesOverlap" | "wordsOutOfOrder" | "wordOutsideLine"
   | "unusedSection" | "emptySlide" | "untimedEntry" | "untimedSlide" | "extraLineCues" | "extraWordCues";
@@ -562,8 +564,10 @@ export interface Platform {
   /** Solo guarda si no hay errores. */
   studioSave(song: MediaSong): Promise<StudioSaveOutcome>;
   studioDelete(id: string): Promise<void>;
-  /** Elige una pista y la copia a la carpeta de la app; null si se cancela. */
-  studioPickAudio(title: string, filterName: string): Promise<{ path: string; name: string } | null>;
+  /** Elige una pista (audio, o un video del que se saca el audio) y la deja en la carpeta de la app; null si se cancela. */
+  studioPickAudio(title: string, filterName: string): Promise<{ path: string; name: string; fromVideo: boolean } | null>;
+  /** Abre el enlace de referencia en el navegador (solo http/https). */
+  studioOpenReference(url: string): Promise<void>;
   /** Los bytes de una pista de la carpeta de la app, para decodificarla. */
   studioReadAudio(path: string): Promise<ArrayBuffer>;
 

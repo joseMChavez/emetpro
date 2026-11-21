@@ -82,6 +82,7 @@ export function emptySong(id: string): MediaSong {
     sections: [],
     order: [],
     rights: { composition: "", lyrics: "", recording: "", license: "", notes: "" },
+    reference: "",
     background: null,
   };
 }
