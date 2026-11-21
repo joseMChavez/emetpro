@@ -9,6 +9,9 @@ pub mod presentations;
 pub mod remote;
 pub mod settings;
 pub mod songs;
+// Sin uso fuera de sus pruebas hasta que llegue su plugin (D-029, bloque 3).
+#[allow(dead_code)]
+pub mod studio;
 pub mod transfer;
 
 #[cfg(test)]
