@@ -778,8 +778,8 @@
     .controls { padding-left: 24px; padding-right: 24px; }
   }
 
-  /* Tablet apaisada o pantalla ancha: «En pantalla» a la izquierda, fija mientras se recorre el resto. */
-  @media (min-width: 900px) and (orientation: landscape) {
+  /* Apaisado, en tablet o en teléfono: «En pantalla» a la izquierda, fija mientras se recorre el resto. */
+  @media (min-width: 560px) and (orientation: landscape) {
     .remote {
       display: grid;
       grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
@@ -796,6 +796,23 @@
     }
     .side { grid-column: 2; }
     .remote .screen { max-height: calc(100dvh - 400px); min-height: 180px; }
+  }
+
+  /* Teléfono apaisado: poca altura. Los cuatro botones en una fila, la pantalla a la medida y espacio para la muesca. */
+  @media (orientation: landscape) and (max-height: 560px) {
+    .remote {
+      padding-left: calc(16px + env(safe-area-inset-left));
+      padding-right: calc(16px + env(safe-area-inset-right));
+      padding-bottom: calc(118px + env(safe-area-inset-bottom));
+    }
+    .controls {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 6px;
+      padding: 6px calc(16px + env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+    }
+    .controls .btn, .controls .btn.big { min-height: 52px; font-size: 16px; }
+    .live { max-height: calc(100dvh - 140px - env(safe-area-inset-bottom)); }
+    .remote .screen { max-height: calc(100dvh - 220px); min-height: 120px; }
   }
   /* Espejo de la pantalla: 16:9 desde el principio para que nada salte mientras llega la imagen. */
   .screen {
