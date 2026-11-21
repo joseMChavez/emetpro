@@ -13,8 +13,10 @@ import { missingFiles, openPlan, savePlan, type PlanItem } from "./plans.svelte"
 import { settings } from "$lib/core/settings.svelte";
 import { DEFAULT_ANIMATION, resolveAnimation } from "$lib/features/output/animation";
 import { bibleFor, missingIn, referenceLabel, scriptureContent } from "./scripture";
+import { songCredit, studio } from "$lib/features/studio/library.svelte";
+import { expand, studioContent } from "$lib/features/studio/song";
 
-const ICONS = { song: "♪", image: "🖼", video: "🎬", pdf: "📄", presentation: "📊", pause: "⏱", scripture: "📖", text: "📝" } as const;
+const ICONS = { song: "♪", studioSong: "🎚", image: "🖼", video: "🎬", pdf: "📄", presentation: "📊", pause: "⏱", scripture: "📖", text: "📝" } as const;
 
 /** El uso del plan en esta sesión: lo preparado desde él y lo que ya pasó por la pantalla. No se guarda. */
 export const session = $state({
@@ -37,9 +39,15 @@ export function songOf(item: PlanItem) {
   return item.kind === "song" ? library.songs.find((s) => s.id === item.songId) : undefined;
 }
 
+/** La canción de Media Studio de un elemento (D-029). */
+export function studioOf(item: PlanItem) {
+  return item.kind === "studioSong" ? studio.songs.find((s) => s.id === item.studioSongId) : undefined;
+}
+
 /** Lo que impide mostrar un elemento: la letra se borró, el archivo ya no está o la versión no tiene la cita. */
 export function problem(item: PlanItem): string | null {
   if (item.kind === "song" && !songOf(item)) return t("plans.songDeleted");
+  if (item.kind === "studioSong" && studio.loaded && !studioOf(item)) return t("plans.songDeleted");
   if (item.kind === "scripture" && !bibles.loading && missingIn(item, bibleFor(item))) return t("plans.notInBible");
   if (item.kind === "media" && missingFiles.has(item.path)) return t("plans.fileMissing");
   return null;
@@ -49,6 +57,7 @@ export function title(item: PlanItem): string {
   switch (item.kind) {
     case "section": return item.title;
     case "song": return songOf(item)?.title ?? t("plans.song");
+    case "studioSong": return studioOf(item)?.title ?? t("plans.studioSong");
     case "media": return baseName(item.path);
     case "pause": return item.title || t("plans.pause");
     case "scripture": return referenceLabel(item, bibleFor(item));
@@ -76,6 +85,12 @@ export function detail(item: PlanItem): string {
       const song = songOf(item);
       return song ? [song.singer, tCount("text.count", splitSlides(song.body).length)].filter(Boolean).join(" · ") : "";
     }
+    case "studioSong": {
+      const song = studioOf(item);
+      if (!song) return t("plans.studioSong");
+      const mode = t(song.mode === "track" ? "studio.badge.track" : "studio.badge.live");
+      return [t("plans.studioSong"), mode, tCount("text.count", expand(song).length)].join(" · ");
+    }
     case "media": return t(`kind.${item.media}`);
     case "scripture": {
       const bible = bibleFor(item);
@@ -94,7 +109,7 @@ export function detail(item: PlanItem): string {
 
 export function icon(item: PlanItem): string {
   if (item.kind === "media") return ICONS[item.media];
-  if (item.kind === "song" || item.kind === "pause" || item.kind === "scripture" || item.kind === "text") return ICONS[item.kind];
+  if (item.kind === "song" || item.kind === "studioSong" || item.kind === "pause" || item.kind === "scripture" || item.kind === "text") return ICONS[item.kind];
   return "";
 }
 
@@ -116,7 +131,7 @@ function withAnimation(item: PlanItem, content: OutputContent | null): OutputCon
   const animation = resolveAnimation(style, {
     plan: openPlan.plan?.animate ?? null,
     section: sectionAnimate(item),
-    own: songOf(item)?.animation ?? null,
+    own: songOf(item)?.animation ?? studioOf(item)?.animation ?? null,
   });
   const { animation: _old, ...rest } = content;
   return animation ? { ...rest, animation } : rest;
@@ -138,6 +153,10 @@ async function baseContent(item: PlanItem): Promise<OutputContent | null> {
     case "song": {
       const song = songOf(item);
       return song ? withMarks(songContent(song), item.marks) : null;
+    }
+    case "studioSong": {
+      const song = studioOf(item);
+      return song ? studioContent(song, songCredit(song)) : null;
     }
     case "text": {
       const slides = textSlides(item.slides);

@@ -405,6 +405,9 @@ export interface PlanImportPreview {
   identical: number;
   conflicts: ImportSong[];
   bibles: BibleRef[];
+  /** Canciones de Media Studio que trae (títulos), y las que ya están en este equipo con otro contenido. */
+  studio: string[];
+  studioConflicts: string[];
 }
 
 export interface PlanImportResult {
@@ -413,6 +416,8 @@ export interface PlanImportResult {
   skipped: number;
   added: number;
   replaced: number;
+  /** Canciones de Media Studio guardadas. */
+  studio: number;
 }
 
 export interface ImportResult {
@@ -440,6 +445,8 @@ export type PlanItem = { id: string } & (
   /** `animate` vale para lo que sigue hasta la sección siguiente; null = como el plan (D-024). */
   | { kind: "section"; title: string; animate?: boolean | null }
   | { kind: "song"; songId: string; marks?: Marks }
+  /** Una canción de Media Studio (D-029), con su pista y sus fondos. */
+  | { kind: "studioSong"; studioSongId: string }
   | { kind: "media"; path: string; media: MediaKind }
   | { kind: "pause"; title: string; durationMs: number; background?: string | null }
   /** Texto con formato escrito en el plan (D-027): un sermón, avisos. */
@@ -570,6 +577,8 @@ export interface Platform {
   studioDelete(id: string): Promise<void>;
   /** Elige una pista (audio, o un video del que se saca el audio) y la deja en la carpeta de la app; null si se cancela. */
   studioPickAudio(title: string, filterName: string): Promise<{ path: string; name: string; fromVideo: boolean } | null>;
+  /** Exporta canciones de Media Studio a un .emetplan (con su pista y sus fondos); null si se cancela. */
+  studioExport(title: string, filterName: string, fileName: string, songIds: string[]): Promise<PlanExportResult | null>;
   /** Guarda un fondo animado generado (SVG) en la carpeta de la app y devuelve su ruta. */
   studioSaveSvg(svg: string): Promise<string>;
   /** Abre el enlace de referencia en el navegador (solo http/https). */

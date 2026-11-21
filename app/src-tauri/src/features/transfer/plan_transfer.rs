@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::features::media::domain::{media_kind, MediaKind};
 use crate::features::plans::domain::{ItemContent, PlanItem};
+use crate::features::studio::domain::{MediaSong, SongMode};
 
 use super::formats::plan::{file_ref, parse_ref};
 
@@ -26,6 +27,8 @@ pub struct Packed {
     pub files: Vec<(String, PathBuf)>,
     /// Ids de las letras que usan los elementos, sin repetir y en orden.
     pub songs: Vec<String>,
+    /// Ids de las canciones de Media Studio (D-029), sin repetir y en orden.
+    pub studio_songs: Vec<String>,
     /// Videos que no van (solo su nombre queda en el plan).
     pub omitted: usize,
 }
@@ -64,6 +67,9 @@ pub fn pack(items: &[PlanItem], include_videos: bool, exists: impl Fn(&Path) -> 
             }
             ItemContent::Pause { background: Some(path), .. } => *path = add(path, &mut out),
             ItemContent::Song { song_id, .. } if !out.songs.contains(song_id) => out.songs.push(song_id.clone()),
+            ItemContent::StudioSong { studio_song_id } if !out.studio_songs.contains(studio_song_id) => {
+                out.studio_songs.push(studio_song_id.clone())
+            }
             _ => {}
         }
         out.items.push(item);
@@ -78,6 +84,7 @@ pub fn unpack(
     values: &[serde_json::Value],
     stored: &HashMap<usize, String>,
     songs: &HashMap<String, String>,
+    studio: &HashMap<String, String>,
     mut new_id: impl FnMut() -> String,
 ) -> (Vec<PlanItem>, usize) {
     let mut skipped = 0;
@@ -104,11 +111,70 @@ pub fn unpack(
                     continue;
                 }
             },
+            ItemContent::StudioSong { studio_song_id } => match studio.get(studio_song_id) {
+                Some(id) => *studio_song_id = id.clone(),
+                None => {
+                    skipped += 1;
+                    continue;
+                }
+            },
             _ => {}
         }
         out.push(item);
     }
     (out, skipped)
+}
+
+/// Una canción de Media Studio para el archivo: su pista (`add(ruta, true)`) y sus fondos (`add(ruta, false)`)
+/// pasan a «@n»; lo que `add` no deja viajar se quita (D-028: solo audio, imagen o video que existan).
+pub fn pack_studio(song: &MediaSong, mut add: impl FnMut(&str, bool) -> Option<usize>) -> MediaSong {
+    let mut song = song.clone();
+    let audio = song.audio.take().and_then(|mut audio| {
+        audio.path = file_ref(add(&audio.path, true)?);
+        Some(audio)
+    });
+    song.audio = audio;
+    song.background = song.background.as_deref().and_then(|p| add(p, false)).map(file_ref);
+    for section in &mut song.sections {
+        section.background = section.background.as_deref().and_then(|p| add(p, false)).map(file_ref);
+    }
+    song
+}
+
+/// Una canción de Media Studio leída del archivo, con las rutas de este equipo: solo un «@n» guardado (en
+/// `tracks` la pista, en `backgrounds` los fondos) se vuelve una ruta; cualquier otra cosa se quita. Sin pista,
+/// queda para interpretar en directo.
+pub fn unpack_studio(mut song: MediaSong, tracks: &HashMap<usize, String>, backgrounds: &HashMap<usize, String>) -> MediaSong {
+    let get = |map: &HashMap<usize, String>, path: &str| parse_ref(path).and_then(|i| map.get(&i)).cloned();
+    let audio = song.audio.take().and_then(|mut audio| {
+        audio.path = get(tracks, &audio.path)?;
+        Some(audio)
+    });
+    song.audio = audio;
+    if song.audio.is_none() {
+        song.mode = SongMode::Live;
+    }
+    song.background = song.background.as_deref().and_then(|p| get(backgrounds, p));
+    for section in &mut song.sections {
+        section.background = section.background.as_deref().and_then(|p| get(backgrounds, p));
+    }
+    song
+}
+
+/// La misma canción, sin mirar dónde están sus archivos en cada equipo (para no duplicarla al reimportarla).
+pub fn same_studio_song(a: &MediaSong, b: &MediaSong) -> bool {
+    let strip = |song: &MediaSong| {
+        let mut song = song.clone();
+        if let Some(audio) = &mut song.audio {
+            audio.path.clear();
+        }
+        song.background = None;
+        for section in &mut song.sections {
+            section.background = None;
+        }
+        song
+    };
+    strip(a) == strip(b)
 }
 
 #[cfg(test)]
@@ -177,7 +243,7 @@ mod tests {
         let stored = HashMap::from([(0, "/medios/ab/anuncio.png".to_string())]);
         let songs = HashMap::from([("admirable".to_string(), "lib-1".to_string())]);
         let mut n = 0;
-        let (items, skipped) = unpack(&values, &stored, &songs, || {
+        let (items, skipped) = unpack(&values, &stored, &songs, &HashMap::new(), || {
             n += 1;
             format!("n{n}")
         });
@@ -194,14 +260,76 @@ mod tests {
             serde_json::json!({"id":"g","kind":"pause","title":"R","durationMs":1000,"background":"C:\\Users\\ana\\secreto.png"}),
             serde_json::json!({"id":"h","kind":"media","path":"@9","media":"image"}),
         ];
-        let (items, _) = unpack(&forged, &stored, &songs, || "x".into());
+        let (items, _) = unpack(&forged, &stored, &songs, &HashMap::new(), || "x".into());
         assert!(matches!(&items[0].content, ItemContent::Media { path, .. } if path == "id_rsa"));
         assert!(matches!(&items[1].content, ItemContent::Pause { background: Some(p), .. } if !p.contains('/') && p.ends_with("secreto.png")));
         assert!(matches!(&items[2].content, ItemContent::Media { path, .. } if path == "@9"));
 
         // Sin la letra en la biblioteca, el elemento no entra.
-        let (items, skipped) = unpack(&values, &stored, &HashMap::new(), || "x".into());
+        let (items, skipped) = unpack(&values, &stored, &HashMap::new(), &HashMap::new(), || "x".into());
         assert_eq!(items.len(), 7);
         assert_eq!(skipped, 3);
+    }
+
+    fn studio_song() -> MediaSong {
+        serde_json::from_value(serde_json::json!({
+            "id": "ms1", "title": "Sublime gracia", "mode": "track",
+            "audio": {"path": "/casa/pistas/ag.mp3", "name": "ag.mp3", "durationMs": 1000},
+            "background": "/casa/fondos/aurora.svg",
+            "sections": [{"id": "c", "kind": "chorus", "slides": [{"id": "a", "lines": ["Gloria"]}], "background": "/casa/fondos/luces.svg"}],
+            "order": [{"id": "e", "section": "c", "timing": {"startMs": 0, "slides": [{"slide": "a", "startMs": 0}]}}]
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn una_cancion_de_media_studio_viaja_con_su_pista_y_sus_fondos() {
+        let items = vec![
+            item("x", ItemContent::StudioSong { studio_song_id: "ms1".into() }),
+            item("y", ItemContent::StudioSong { studio_song_id: "ms1".into() }),
+        ];
+        assert_eq!(pack(&items, true, |_| true).studio_songs, ["ms1"]);
+
+        let mut files = Vec::new();
+        let packed = pack_studio(&studio_song(), |path, _| {
+            files.push(path.to_string());
+            Some(files.len() - 1)
+        });
+        assert_eq!(files, ["/casa/pistas/ag.mp3", "/casa/fondos/aurora.svg", "/casa/fondos/luces.svg"]);
+        assert_eq!(packed.audio.as_ref().unwrap().path, "@0");
+        assert_eq!(packed.background.as_deref(), Some("@1"));
+        assert_eq!(packed.sections[0].background.as_deref(), Some("@2"));
+        // Los tiempos viajan tal cual.
+        assert_eq!(packed.order, studio_song().order);
+
+        // En la iglesia: las rutas de este equipo.
+        let tracks = HashMap::from([(0, "/iglesia/pistas/ab/ag.mp3".to_string())]);
+        let backgrounds = HashMap::from([(1, "/iglesia/fondos/aurora.svg".to_string()), (2, "/iglesia/fondos/luces.svg".to_string())]);
+        let song = unpack_studio(packed.clone(), &tracks, &backgrounds);
+        assert_eq!(song.audio.as_ref().unwrap().path, "/iglesia/pistas/ab/ag.mp3");
+        assert_eq!(song.mode, SongMode::Track);
+        assert_eq!(song.sections[0].background.as_deref(), Some("/iglesia/fondos/luces.svg"));
+        assert!(same_studio_song(&song, &studio_song()));
+    }
+
+    #[test]
+    fn una_cancion_sin_su_pista_queda_en_directo_y_las_rutas_inventadas_no_entran() {
+        // Lo que no deja viajar `add` (no existe, no es audio) se quita.
+        let packed = pack_studio(&studio_song(), |_, _| None);
+        assert!(packed.audio.is_none() && packed.background.is_none());
+
+        let mut forged = studio_song();
+        forged.audio.as_mut().unwrap().path = "/home/ana/.ssh/id_rsa".into();
+        forged.background = Some("@7".into());
+        let song = unpack_studio(forged, &HashMap::new(), &HashMap::new());
+        assert!(song.audio.is_none());
+        assert_eq!(song.mode, SongMode::Live);
+        assert!(song.background.is_none() && song.sections[0].background.is_none());
+
+        // Un elemento de una canción que no se importó no entra en el plan.
+        let values = vec![serde_json::json!({"id": "x", "kind": "studioSong", "studioSongId": "otra"})];
+        let (items, skipped) = unpack(&values, &HashMap::new(), &HashMap::new(), &HashMap::from([("ms1".into(), "ms1".into())]), || "n".into());
+        assert!(items.is_empty());
+        assert_eq!(skipped, 1);
     }
 }

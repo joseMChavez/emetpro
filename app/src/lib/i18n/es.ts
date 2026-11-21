@@ -670,6 +670,14 @@ const es = {
   "remote.plan": "Plan · {name}",
 
   // Media Studio (D-029)
+  "plans.studioSong": "Canción de Media Studio",
+  "planfile.studio": "Canciones de Media Studio, con su pista y sus fondos: {list}",
+  "planfile.studioConflicts": "Ya están en esta computadora con otro contenido: {list}",
+  "studio.import": "Importar…",
+  "studio.importHint": "Abrir un archivo .emetplan preparado en otra computadora y ponerlo en un plan",
+  "studio.exportTitle": "Guardar la canción",
+  "studio.exportHint": "Guardar la canción con su pista, sus tiempos y sus fondos en un archivo .emetplan, para llevarla a otra computadora (por ejemplo, por una carpeta en la nube)",
+  "studio.exported": "Guardada en {path}",
   "studio.bg.label": "Fondo",
   "studio.bg.inheritGeneral": "Como lo general",
   "studio.bg.inheritSong": "Como la canción",

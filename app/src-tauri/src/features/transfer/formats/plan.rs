@@ -49,6 +49,11 @@ pub struct PlanManifest {
     /// Letras usadas por los elementos (por su id); `background` es un índice en `files`.
     #[serde(default)]
     pub songs: Vec<SongEntry>,
+    /// Canciones de Media Studio (D-029) usadas por los elementos, como MediaSong en JSON con su pista y sus fondos
+    /// como «@n». Se leen de una en una: una que esta versión no entienda se salta. Las versiones anteriores no
+    /// conocen este campo ni el elemento «studioSong»: los saltan.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub studio_songs: Vec<serde_json::Value>,
     /// Versiones de la Biblia fijadas en las citas, para avisar si el que importa no las tiene.
     #[serde(default)]
     pub bibles: Vec<BibleRef>,
@@ -212,6 +217,7 @@ mod tests {
             section: Some("Predicación".into()),
             items: vec![serde_json::json!({"id":"1","kind":"media","path":"@0","media":"image"})],
             songs: Vec::new(),
+            studio_songs: Vec::new(),
             bibles: Vec::new(),
             files: Vec::new(),
         }

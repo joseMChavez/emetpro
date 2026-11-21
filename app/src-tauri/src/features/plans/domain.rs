@@ -69,6 +69,9 @@ pub enum ItemContent {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         marks: Marks,
     },
+    /// Una canción de Media Studio (D-029), con su pista y sus fondos. Si se borra de Media Studio, el plan la
+    /// marca como borrada.
+    StudioSong { studio_song_id: String },
     /// Un tiempo con cuenta atrás en pantalla (receso, conferencia).
     Pause {
         title: String,

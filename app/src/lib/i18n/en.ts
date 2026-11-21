@@ -671,6 +671,14 @@ const en: Record<MessageKey, string> = {
   "remote.plan": "Plan · {name}",
 
   // Media Studio (D-029)
+  "plans.studioSong": "Media Studio song",
+  "planfile.studio": "Media Studio songs, with their track and backgrounds: {list}",
+  "planfile.studioConflicts": "Already on this computer with different content: {list}",
+  "studio.import": "Import…",
+  "studio.importHint": "Open an .emetplan file prepared on another computer and put it in a plan",
+  "studio.exportTitle": "Save the song",
+  "studio.exportHint": "Save the song with its track, timings and backgrounds in an .emetplan file, to take it to another computer (for example, through a cloud folder)",
+  "studio.exported": "Saved to {path}",
   "studio.bg.label": "Background",
   "studio.bg.inheritGeneral": "Same as general",
   "studio.bg.inheritSong": "Same as the song",

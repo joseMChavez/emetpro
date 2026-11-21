@@ -7,6 +7,7 @@
   import { platform, type OnConflict, type PlanImportPreview } from "$lib/platform";
   import { bibles } from "$lib/features/bible/bibles.svelte";
   import { plans } from "./plans.svelte";
+  import { loadStudio } from "$lib/features/studio/library.svelte";
   import { formatBytes } from "./size";
 
   let {
@@ -43,6 +44,8 @@
         target === "new" ? newName.trim() || preview.name : null,
         target === "append" ? appendTo : null,
       );
+      // Las canciones de Media Studio que llegaron, a su biblioteca.
+      if (result.studio > 0) await loadStudio();
       onimported(result.planId, t("planfile.imported", { items: result.items, added: result.added }));
     } catch (e) {
       onerror(toMessage(e));
@@ -69,6 +72,20 @@
   {/if}
   {#if missingBibles.length > 0}
     <p class="small warn">{t("planfile.missingBibles", { list: missingBibles.map((b) => `${b.abbreviation} (${b.name})`).join(", ") })}</p>
+  {/if}
+  {#if preview.studio.length > 0}
+    <p class="small">{t("planfile.studio", { list: preview.studio.join(", ") })}</p>
+    {#if preview.studioConflicts.length > 0 && preview.conflicts.length === 0}
+      <p class="small">{t("planfile.studioConflicts", { list: preview.studioConflicts.join(", ") })}</p>
+      <fieldset class="choices">
+        <legend class="small">{t("transfer.conflictQuestion")}</legend>
+        {#each [["skip", "transfer.conflict.skip"], ["replace", "transfer.conflict.replace"], ["keepBoth", "transfer.conflict.keepBoth"]] as const as [id, label] (id)}
+          <label><input type="radio" name="plan-conflict" value={id} bind:group={onConflict} /> {t(label)}</label>
+        {/each}
+      </fieldset>
+    {:else if preview.studioConflicts.length > 0}
+      <p class="small">{t("planfile.studioConflicts", { list: preview.studioConflicts.join(", ") })}</p>
+    {/if}
   {/if}
   {#if preview.fresh.length + preview.identical + preview.conflicts.length > 0}
     <p class="small">

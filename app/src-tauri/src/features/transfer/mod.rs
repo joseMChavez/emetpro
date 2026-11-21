@@ -29,6 +29,7 @@ pub fn plugin() -> TauriPlugin<Wry> {
             commands::transfer_export,
             commands::plan_export_info,
             commands::plan_export,
+            commands::studio_export,
             commands::plan_import_pick,
             commands::plan_import_apply,
             commands::plan_import_cancel,
