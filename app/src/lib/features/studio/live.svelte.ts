@@ -139,6 +139,8 @@ export function follow(content: OutputContent) {
   pending = false;
   onScreen.loop = false;
   cursor = content.index;
+  // El tono guardado de la canción (lo que se cambie en vivo dura hasta otra canción).
+  player.setTranspose(song.transpose ?? 0);
   // Si ya sonaba esta misma pista (se volvió a enviar), no se toca.
   if (player.path === song.audio.path && player.playing) return;
   const index = content.index;

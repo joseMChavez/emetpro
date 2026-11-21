@@ -374,6 +374,7 @@
       case "trackLoop": return toggleLoop();
       case "trackFinish": return finishSong();
       case "trackBackground": return keepInBackground();
+      case "trackTone": return studioPlayer.setTranspose(command.semitones);
       case "studioSection": {
         const n = sectionTarget(command.id);
         if (n !== null) goLive(n);

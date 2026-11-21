@@ -5,7 +5,7 @@
   import { version as build } from "$app/environment";
   import { bookName, type BookLanguage } from "$lib/features/bible/books";
   import { parseQuery } from "$lib/features/bible/reference";
-  import { i18n, t, type MessageKey } from "$lib/i18n/index.svelte";
+  import { i18n, t, tCount, type MessageKey } from "$lib/i18n/index.svelte";
   import type { Verse } from "$lib/platform";
   import type { RemoteCommand, RemoteStatus, ServerMessage } from "./protocol";
   import BoardPad from "./BoardPad.svelte";
@@ -523,6 +523,15 @@
                   {studio.finishing ? t("studio.finishing") : t("studio.finish")}
                 </button>
               </div>
+              {#if studio.transpose !== undefined}
+                {@const tone = studio.transpose}
+                <div class="studio-row tone" role="group" aria-label={t("studio.tone")}>
+                  <span class="muted">{t("studio.tone")}</span>
+                  <button class="btn" disabled={connection !== "open" || tone <= -6} onclick={() => command({ type: "trackTone", semitones: tone - 1 })} aria-label={t("studio.tone.down")}>−</button>
+                  <strong>{tone === 0 ? t("studio.tone.original") : `${tone > 0 ? "+" : "−"}${tCount("studio.tone.semitones", Math.abs(tone))}`}</strong>
+                  <button class="btn" disabled={connection !== "open" || tone >= 6} onclick={() => command({ type: "trackTone", semitones: tone + 1 })} aria-label={t("studio.tone.up")}>+</button>
+                </div>
+              {/if}
             {/if}
             <div class="studio-sections" role="group" aria-label={t("studio.sections")}>
               {#each studio.sections as section (section.id)}
@@ -916,6 +925,8 @@
   .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .studio { display: flex; flex-direction: column; gap: 8px; }
   .studio-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .studio-row.tone { align-items: center; }
+  .studio-row.tone .btn { min-width: 52px; font-size: 20px; font-weight: 700; }
   .studio-behind { margin: 0; font-weight: 700; color: var(--live); }
   .studio-row .play { flex: 1; min-width: 140px; min-height: 56px; font-size: 18px; }
   .studio-row .btn[aria-pressed="true"] { border-color: var(--live); background: var(--live-soft); }

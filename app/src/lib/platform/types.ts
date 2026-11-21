@@ -266,13 +266,15 @@ export interface MediaSong {
   reference: string;
   background: string | null;
   animation?: TextAnimation | null;
+  /** Semitonos de más o de menos al sonar (de −6 a +6); sin él, el original. */
+  transpose?: number;
 }
 
 export type IssueCode =
   | "missingTitle" | "invalidReference" | "missingId" | "duplicateId" | "emptyOrder" | "unknownSection" | "trackWithoutAudio" | "invalidAudio"
   | "timeOutOfTrack" | "entriesOutOfOrder" | "sameEntryStart" | "unknownSlide" | "duplicateCue" | "slidesOutOfOrder" | "slideOutsideEntry"
   | "linesOutOfOrder" | "lineOutsideSlide" | "lineEndBeforeStart" | "linesOverlap" | "wordsOutOfOrder" | "wordOutsideLine"
-  | "unusedSection" | "emptySlide" | "untimedEntry" | "untimedSlide" | "extraLineCues" | "extraWordCues" | "shortSlide";
+  | "unusedSection" | "emptySlide" | "untimedEntry" | "untimedSlide" | "extraLineCues" | "extraWordCues" | "shortSlide" | "invalidTranspose";
 
 export interface SongIssue {
   code: IssueCode;

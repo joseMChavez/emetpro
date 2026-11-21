@@ -9,6 +9,7 @@
   import { player } from "./player.svelte";
   import { sectionName } from "./names";
   import BehindTrack from "./BehindTrack.svelte";
+  import ToneControl from "./ToneControl.svelte";
   import { sectionOf } from "./song";
   import { formatTime } from "./timeline";
 
@@ -79,6 +80,8 @@
             {player.finishing ? t("studio.finishing") : t("studio.finish")}
           </button>
         </div>
+        <!-- Si quien dirige pide otro tono en el momento: dura hasta la próxima canción (el guardado, en el editor). -->
+        <ToneControl value={player.transpose} onchange={(n) => player.setTranspose(n)} />
       {/if}
       {#if trackReady() && !synced()}
         <!-- Sin tiempos la pista no tiene a dónde saltar: que se note, no que parezca que falla. -->

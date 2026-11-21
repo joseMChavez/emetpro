@@ -239,13 +239,14 @@ function studioOf(): RemoteStudio | null {
   if (!song) {
     // Otra cosa en pantalla y la canción sigue sonando: el teléfono también la puede parar o dejar de fondo.
     if (!background) return null;
-    return { playing: studioPlayer.playing, finishing: studioPlayer.finishing, loop: studioBehind.loop, sections: [], behind: background };
+    return { playing: studioPlayer.playing, finishing: studioPlayer.finishing, loop: studioBehind.loop, transpose: studioPlayer.transpose, sections: [], behind: background };
   }
   void studioOnScreen.index;
   return {
     playing: song.mode === "track" && studioTrackReady() ? studioPlayer.playing : null,
     finishing: studioPlayer.finishing,
     loop: studioOnScreen.loop,
+    transpose: studioPlayer.transpose,
     sections: sectionsOnScreen().flatMap((s) => {
       const section = song.sections.find((x) => x.id === s.id);
       return section ? [{ id: s.id, name: sectionName(song, section), current: s.current }] : [];

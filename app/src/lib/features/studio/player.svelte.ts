@@ -3,6 +3,7 @@
 // con un fundido corto para que no se oiga un golpe. El reloj es el del audio (AudioContext.currentTime); mientras
 // suena se lee en cada cuadro con requestAnimationFrame, nunca con un setInterval.
 import { platform } from "$lib/platform";
+import type { StretchNode } from "signalsmith-stretch";
 
 /** Fundido de cada salto, en segundos: lo justo para que no chasquee. */
 const FADE = 0.03;
@@ -14,6 +15,9 @@ const BACKGROUND = 0.3;
 const SOFTEN = 1.5;
 /** «Terminar»: el final de la canción baja despacio, como cuando la banda termina. */
 const FINISH = 4;
+
+/** Cuánto se puede subir o bajar el tono: más se oye artificial. */
+export const TRANSPOSE_MAX = 6;
 
 export type PlayerStatus = "empty" | "loading" | "ready" | "error";
 
@@ -37,10 +41,24 @@ class Player {
   rate = $state(1);
   /** Suena de fondo, más suave, mientras en pantalla hay otra cosa. */
   background = $state(false);
+  /** Semitonos de más o de menos (el tono de la canción, para la voz de quien dirige). 0 = el original. */
+  transpose = $state(0);
+  /** El cambio de tono no está disponible en este equipo (sin AudioWorklet o WebAssembly): suena el original. */
+  shiftError = $state<string | null>(null);
 
   private ctx: AudioContext | null = null;
   /** Volumen general: los fundidos de reproducir, pausar y terminar (cada trozo tiene el suyo para los saltos). */
   private master: GainNode | null = null;
+  /**
+   * Por donde entran los trozos: va directo al volumen general o, si hay que cambiar el tono (o compensar el de
+   * marcar más despacio), pasa antes por el cambiador. Sin cambio no lo atraviesa: el sonido original, sin retraso.
+   */
+  private bus: GainNode | null = null;
+  private shifter: StretchNode | null = null;
+  private shifterLoad: Promise<StretchNode | null> | null = null;
+  /** Lo que retrasa el cambiador, en segundos (para que el reloj diga lo que se oye). */
+  private latency = 0;
+  private routed = false;
   private buffer: AudioBuffer | null = null;
   private source: AudioBufferSourceNode | null = null;
   private gain: GainNode | null = null;
@@ -87,6 +105,8 @@ class Player {
       this.ctx = new AudioContext();
       this.master = this.ctx.createGain();
       this.master.connect(this.ctx.destination);
+      this.bus = this.ctx.createGain();
+      this.bus.connect(this.master);
     }
     return this.ctx;
   }
@@ -117,7 +137,9 @@ class Player {
   /** Posición actual, del reloj del audio. */
   now(): number {
     if (!this.playing || !this.ctx) return this.offset * 1000;
-    return Math.min(this.durationMs, (this.offset + (this.ctx.currentTime - this.startedAt) * this.rate) * 1000);
+    // Con el cambiador, lo que se oye va un poco por detrás de lo que se le da.
+    const delay = this.routed ? this.latency : 0;
+    return Math.min(this.durationMs, (this.offset + Math.max(0, this.ctx.currentTime - this.startedAt - delay) * this.rate) * 1000);
   }
 
   async play() {
@@ -197,6 +219,69 @@ class Player {
     } else {
       this.rate = rate;
     }
+    this.applyShift();
+  }
+
+  /** Sube o baja el tono (semitonos, de −6 a +6), sin cambiar la velocidad. */
+  setTranspose(semitones: number) {
+    const n = Math.max(-TRANSPOSE_MAX, Math.min(TRANSPOSE_MAX, Math.round(semitones) || 0));
+    if (n === this.transpose) return;
+    this.transpose = n;
+    this.applyShift();
+  }
+
+  /** Semitonos que aplica el cambiador: el tono elegido, y lo que baja la música al ir más despacio. */
+  private shift(): number {
+    return this.transpose - (this.rate === 1 ? 0 : 12 * Math.log2(this.rate));
+  }
+
+  /** Pone o quita el cambiador según haga falta. La primera vez lo carga (unos cientos de KB). */
+  private applyShift() {
+    const semitones = this.shift();
+    const need = Math.abs(semitones) > 0.01;
+    if (need && !this.shifter && !this.shiftError) {
+      // Cargado (o fallido, y entonces suena el original), se vuelve a aplicar con lo que se pida para entonces.
+      this.loadShifter().then(() => this.applyShift());
+      return;
+    }
+    const shifter = this.shifter;
+    if (shifter) {
+      // Formantes sin compensar: sobre una mezcla entera la compensación emborrona los instrumentos.
+      shifter.schedule({ active: need, semitones, formantCompensation: false });
+    }
+    this.route(need && shifter !== null);
+  }
+
+  private route(through: boolean) {
+    if (!this.bus || !this.master || through === this.routed) return;
+    // El reloj (now) ya cuenta el retraso del cambiador mientras se pasa por él.
+    this.bus.disconnect();
+    this.bus.connect(through && this.shifter ? this.shifter : this.master);
+    this.routed = through;
+  }
+
+  private loadShifter(): Promise<StretchNode | null> {
+    this.shifterLoad ??= (async () => {
+      const ctx = this.context();
+      try {
+        const { default: SignalsmithStretch } = await import("signalsmith-stretch");
+        // Si el equipo no deja cargar el procesador, la promesa no termina nunca: se le pone un límite.
+        const node = await Promise.race([
+          SignalsmithStretch(ctx),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("tiempo agotado")), 8000)),
+        ]);
+        this.latency = await node.latency();
+        node.connect(this.master!);
+        this.shifter = node;
+        this.shiftError = null;
+        return node;
+      } catch (e) {
+        this.shiftError = (e as { message?: string })?.message ?? String(e);
+        platform.logError(`media studio: cambio de tono: ${this.shiftError}`).catch(() => {});
+        return null;
+      }
+    })();
+    return this.shifterLoad;
   }
 
   /**
@@ -301,7 +386,8 @@ class Player {
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0, ctx.currentTime);
     gain.gain.linearRampToValueAtTime(1, ctx.currentTime + FADE);
-    gain.connect(ctx.destination);
+    // Al bus, y de ahí al volumen general: así suenan los fundidos, «de fondo» y el cambio de tono.
+    gain.connect(this.bus!);
     const source = ctx.createBufferSource();
     source.buffer = this.buffer;
     source.playbackRate.value = this.rate;
