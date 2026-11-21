@@ -128,4 +128,4 @@ Están pensados sobre estas mismas piezas:
 - Su contenido en pantalla será un tipo nuevo de `OutputContent`, dibujado en la salida también dentro de un `iframe`.
 - Sus permisos se declararán en su `plugin.json` y se aceptarán al instalarlo, igual que cada funcionalidad tiene hoy su `<x>:default`.
 
-Las decisiones de diseño y sus motivos están en `DECISIONS.md`.
+Las decisiones de diseño y sus motivos están en `DECISIONS.md`; las ideas acordadas que aún no se hacen, en `PENDIENTES.md`.
