@@ -268,13 +268,21 @@ export interface MediaSong {
   animation?: TextAnimation | null;
   /** Semitonos de más o de menos al sonar (de −6 a +6); sin él, el original. */
   transpose?: number;
+  /** Tonalidad de la pista (detectada y corregible); ausente = sin saber. */
+  key?: MusicalKey | null;
+}
+
+/** Tónica en semitonos desde Do (0 = Do, 7 = Sol) y si es menor. */
+export interface MusicalKey {
+  tonic: number;
+  minor: boolean;
 }
 
 export type IssueCode =
   | "missingTitle" | "invalidReference" | "missingId" | "duplicateId" | "emptyOrder" | "unknownSection" | "trackWithoutAudio" | "invalidAudio"
   | "timeOutOfTrack" | "entriesOutOfOrder" | "sameEntryStart" | "unknownSlide" | "duplicateCue" | "slidesOutOfOrder" | "slideOutsideEntry"
   | "linesOutOfOrder" | "lineOutsideSlide" | "lineEndBeforeStart" | "linesOverlap" | "wordsOutOfOrder" | "wordOutsideLine"
-  | "unusedSection" | "emptySlide" | "untimedEntry" | "untimedSlide" | "extraLineCues" | "extraWordCues" | "shortSlide" | "invalidTranspose";
+  | "unusedSection" | "emptySlide" | "untimedEntry" | "untimedSlide" | "extraLineCues" | "extraWordCues" | "shortSlide" | "invalidTranspose" | "invalidKey";
 
 export interface SongIssue {
   code: IssueCode;

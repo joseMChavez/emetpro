@@ -161,6 +161,19 @@ pub struct MediaSong {
     /// Semitonos de más o de menos al sonar (el tono para la voz de quien dirige); 0 = el original.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub transpose: i8,
+    /// Tonalidad de la pista: la detecta la app al cargarla y quien prepara la corrige si hace falta.
+    /// None = sin saber (canción en directo o aún sin detectar).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<MusicalKey>,
+}
+
+/// Tonalidad: la tónica en semitonos desde Do (0 = Do, 7 = Sol, 11 = Si) y si es menor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MusicalKey {
+    pub tonic: u8,
+    #[serde(default)]
+    pub minor: bool,
 }
 
 fn is_zero(n: &i8) -> bool {
@@ -190,6 +203,8 @@ pub enum IssueCode {
     InvalidReference,
     /// El tono va más allá de ±TRANSPOSE_MAX semitonos.
     InvalidTranspose,
+    /// La tónica no es una de las doce notas (0 a 11).
+    InvalidKey,
     MissingId,
     DuplicateId,
     EmptyOrder,
@@ -327,6 +342,9 @@ impl MediaSong {
         }
         if self.transpose.abs() > TRANSPOSE_MAX {
             issues.add(IssueCode::InvalidTranspose, Location::default());
+        }
+        if self.key.is_some_and(|k| k.tonic > 11) {
+            issues.add(IssueCode::InvalidKey, Location::default());
         }
         let mut ids = HashSet::new();
         let mut check_id = |id: &str, at: Location, issues: &mut Issues| {
@@ -577,6 +595,7 @@ mod tests {
             background: None,
             animation: None,
             transpose: 0,
+            key: None,
         }
     }
 
@@ -678,6 +697,18 @@ mod tests {
         song.transpose = -2;
         let back: MediaSong = serde_json::from_str(&serde_json::to_string(&song).unwrap()).unwrap();
         assert_eq!(back.transpose, -2);
+    }
+
+    #[test]
+    fn tonalidad_de_las_doce_notas() {
+        let mut song = sample();
+        assert!(!serde_json::to_string(&song).unwrap().contains("\"key\""));
+        song.key = Some(MusicalKey { tonic: 7, minor: false });
+        assert_eq!(codes(&song), vec![]);
+        let back: MediaSong = serde_json::from_str(&serde_json::to_string(&song).unwrap()).unwrap();
+        assert_eq!(back.key, Some(MusicalKey { tonic: 7, minor: false }));
+        song.key = Some(MusicalKey { tonic: 12, minor: true });
+        assert_eq!(codes(&song), vec![IssueCode::InvalidKey]);
     }
 
     #[test]
