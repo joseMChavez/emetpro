@@ -300,7 +300,9 @@ pub fn separate(data: &Path, track: &Path, target: &Path, mut step: impl FnMut(S
         SeparateError::Model(e) => SeparatorError::Failed(e),
     })?;
     step(Step::Saving);
-    audio::write_flac(target, &stems.instrumental).map_err(SeparatorError::Failed)?;
+    let mut instrumental = stems.instrumental;
+    audio::match_loudness(&mut instrumental, &mix);
+    audio::write_flac(target, &instrumental).map_err(SeparatorError::Failed)?;
     Ok((mix[0].len() as u64 * 1000 / audio::RATE as u64) as u32)
 }
 

@@ -80,6 +80,86 @@ fn resample(input: Stereo, from: u32) -> Result<Stereo, String> {
     Ok([left, right])
 }
 
+/// Filtro bicuadrático (forma directa I).
+struct Biquad {
+    b: [f64; 3],
+    a: [f64; 2],
+}
+
+impl Biquad {
+    fn run(&self, x: &[f32]) -> Vec<f64> {
+        let (mut x1, mut x2, mut y1, mut y2) = (0.0, 0.0, 0.0, 0.0);
+        x.iter()
+            .map(|&v| {
+                let v = v as f64;
+                let y = self.b[0] * v + self.b[1] * x1 + self.b[2] * x2 - self.a[0] * y1 - self.a[1] * y2;
+                (x2, x1, y2, y1) = (x1, v, y1, y);
+                y
+            })
+            .collect()
+    }
+}
+
+/// Ponderación K de ITU-R BS.1770 para `rate` (los dos filtros, calculados como pyloudnorm).
+fn k_weighting(rate: f64) -> [Biquad; 2] {
+    // Estante alto: +4 dB por encima de ~1,7 kHz (la cabeza).
+    let (g, q, f0) = (3.999_843_853_973_347, 0.707_175_236_955_419_6, 1_681.974_450_955_533);
+    let k = (std::f64::consts::PI * f0 / rate).tan();
+    let vh = 10f64.powf(g / 20.0);
+    let vb = vh.powf(0.499_666_774_154_541_6);
+    let a0 = 1.0 + k / q + k * k;
+    let shelf = Biquad {
+        b: [(vh + vb * k / q + k * k) / a0, 2.0 * (k * k - vh) / a0, (vh - vb * k / q + k * k) / a0],
+        a: [2.0 * (k * k - 1.0) / a0, (1.0 - k / q + k * k) / a0],
+    };
+    // Paso alto RLB: quita lo que está por debajo de ~38 Hz.
+    let (q, f0) = (0.500_327_037_323_877_3, 38.135_470_876_024_44);
+    let k = (std::f64::consts::PI * f0 / rate).tan();
+    let a0 = 1.0 + k / q + k * k;
+    let high_pass = Biquad { b: [1.0, -2.0, 1.0], a: [2.0 * (k * k - 1.0) / a0, (1.0 - k / q + k * k) / a0] };
+    [shelf, high_pass]
+}
+
+/// Volumen percibido en LUFS (ITU-R BS.1770-4, como `ffmpeg -af ebur128`): ponderación K, bloques de 400 ms
+/// solapados un 75 %, umbral absoluto de −70 LUFS y relativo de −10 LU. None si todo es silencio.
+pub fn loudness(audio: &Stereo) -> Option<f64> {
+    let [shelf, high_pass] = k_weighting(RATE as f64);
+    let weighted: Vec<Vec<f64>> = audio.iter().map(|c| high_pass.run(&shelf.run(c).iter().map(|v| *v as f32).collect::<Vec<_>>())).collect();
+    let block = RATE as usize * 2 / 5;
+    let step = block / 4;
+    let n = weighted[0].len();
+    if n < block {
+        return None;
+    }
+    let powers: Vec<f64> = (0..=(n - block) / step)
+        .map(|j| weighted.iter().map(|c| c[j * step..j * step + block].iter().map(|v| v * v).sum::<f64>() / block as f64).sum())
+        .collect();
+    let lufs = |p: f64| -0.691 + 10.0 * p.max(1e-20).log10();
+    let mean = |ps: &[f64]| ps.iter().sum::<f64>() / ps.len() as f64;
+    let loud: Vec<f64> = powers.iter().copied().filter(|p| lufs(*p) > -70.0).collect();
+    if loud.is_empty() {
+        return None;
+    }
+    let relative = lufs(mean(&loud)) - 10.0;
+    let gated: Vec<f64> = loud.into_iter().filter(|p| lufs(*p) > relative).collect();
+    Some(lufs(mean(&gated)))
+}
+
+/// Sube el volumen de `audio` hasta el de `reference`: sin voz, una canción en la que la voz era lo principal
+/// queda muy baja (medido: 9 dB menos en una voz con guitarra). Como mucho +12 dB y sin pasar del 97 % del
+/// máximo, para que nunca sature. No baja nunca el volumen.
+pub fn match_loudness(audio: &mut Stereo, reference: &Stereo) -> f64 {
+    let (Some(target), Some(current)) = (loudness(reference), loudness(audio)) else { return 0.0 };
+    let peak = audio.iter().flatten().fold(0f32, |m, v| m.max(v.abs())) as f64;
+    let headroom = if peak > 0.0 { 20.0 * (0.97 / peak).log10() } else { 0.0 };
+    let gain_db = (target - current).min(12.0).min(headroom).max(0.0);
+    let gain = 10f64.powf(gain_db / 20.0) as f32;
+    for v in audio.iter_mut().flatten() {
+        *v *= gain;
+    }
+    gain_db
+}
+
 /// Guarda en FLAC estéreo, 16 bits, 44,1 kHz.
 pub fn write_flac(path: &Path, audio: &Stereo) -> Result<(), String> {
     use flacenc::component::BitRepr;
@@ -131,6 +211,21 @@ mod tests {
     }
 
     #[test]
+    fn iguala_el_volumen_sin_saturar() {
+        let reference = tone(RATE, 2.0);
+        let mut quiet: Stereo = [reference[0].iter().map(|v| v * 0.25).collect(), reference[1].iter().map(|v| v * 0.25).collect()];
+        let gain = match_loudness(&mut quiet, &reference);
+        // Un cuarto de amplitud son 12 dB menos: se recupera, pero el pico (0,5) solo deja subir hasta 0,97.
+        assert!((gain - 20.0 * (0.97f64 / 0.125).log10()).abs() < 0.01 || (gain - 12.0).abs() < 0.01, "{gain}");
+        let peak = quiet.iter().flatten().fold(0f32, |m, v| m.max(v.abs()));
+        assert!(peak <= 0.971, "{peak}");
+        assert!((loudness(&quiet).unwrap() - loudness(&reference).unwrap()).abs() < 0.1);
+        // Lo que ya está al volumen de la original (o más fuerte) no se toca.
+        let mut same = reference.clone();
+        assert_eq!(match_loudness(&mut same, &reference), 0.0);
+    }
+
+    #[test]
     fn remuestrea_a_44100() {
         let out = resample(tone(48_000, 1.0), 48_000).unwrap();
         let expected = RATE as usize;
@@ -141,3 +236,16 @@ mod tests {
     }
 }
 
+
+#[cfg(test)]
+mod loudness_check {
+    /// Compara con ffmpeg: EMETPRO_FILES=a.mp3,b.flac cargo test --release mide_como_ffmpeg -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn mide_como_ffmpeg() {
+        for p in std::env::var("EMETPRO_FILES").unwrap().split(',') {
+            let a = super::decode(std::path::Path::new(p)).unwrap();
+            println!("{p}: {:.1} LUFS", super::loudness(&a).unwrap());
+        }
+    }
+}
