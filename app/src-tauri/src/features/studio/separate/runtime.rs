@@ -333,6 +333,27 @@ mod tests {
         assert!(check(&"0".repeat(64), MODEL.size, &MODEL).is_err());
     }
 
+    /// La descarga de verdad (ONNX Runtime de PyPI y el modelo de las Releases), en una carpeta temporal:
+    /// cargo test --release descarga_el_separador -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn descarga_el_separador() {
+        let data = std::env::temp_dir().join(format!("emetpro-descarga-separador-{}", std::process::id()));
+        let mut last = 0;
+        let started = Instant::now();
+        tauri::async_runtime::block_on(download(&data, |done| last = done)).unwrap_or_else(|_| panic!("descargar"));
+        println!("{} MB en {:?}", last / 1_000_000, started.elapsed());
+        assert_eq!(last, download_size());
+        let (library, model) = installed(&data).expect("instalado");
+        assert!(library.is_file() && model.is_file());
+        assert!(root(&data).join("onnxruntime-LICENSE").is_file() && root(&data).join("LICENSE-htdemucs.txt").is_file());
+        // La biblioteca descargada se carga y abre el modelo.
+        let environment = environment(&library).unwrap_or_else(|_| panic!("cargar ONNX Runtime"));
+        Session::builder(environment).unwrap().commit_from_file(&model).unwrap();
+        remove(&data).unwrap_or_else(|_| panic!("borrar"));
+        assert!(installed(&data).is_none());
+    }
+
     /// Como lo hace la app, con archivos ya descargados (el paquete de PyPI y el modelo) en lugar de la red:
     /// EMETPRO_ORT_WHEEL=… EMETPRO_DEMUCS_MODEL=… EMETPRO_TRACK=… EMETPRO_OUT=….flac
     /// cargo test --release separa_una_cancion_como_la_app -- --ignored --nocapture
