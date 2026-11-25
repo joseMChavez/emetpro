@@ -3,7 +3,7 @@
   import { untrack } from "svelte";
   import { t, tCount } from "$lib/i18n/index.svelte";
   import { toMessage, type Message } from "$lib/core/messages";
-  import { platform, type MediaSong, type MusicalKey, type OutputContent, type SectionKind, type SongIssue } from "$lib/platform";
+  import { platform, type AudioTrack, type MediaSong, type MusicalKey, type OutputContent, type SectionKind, type SongIssue } from "$lib/platform";
   import { saveStudioSong, songCredit } from "./library.svelte";
   import { onScreen } from "./live.svelte";
   import { player } from "./player.svelte";
@@ -14,8 +14,9 @@
   import { ANALYSIS_RATE, detectKey } from "./key";
   import { keyFromValue, keyLabel, keyValue } from "./keylabel";
   import LyricsFromTrack from "./LyricsFromTrack.svelte";
+  import VoiceRemover from "./VoiceRemover.svelte";
   import { parseLyrics } from "./parse";
-  import { dropTroubledTimings, expand, hasTroubledTimings, newId, sectionOf, sectionText, SECTION_KINDS, slideText, studioContent, withText } from "./song";
+  import { dropTroubledTimings, expand, hasTroubledTimings, newId, sectionOf, sectionText, SECTION_KINDS, slideText, studioContent, trackPath, withText } from "./song";
   import { clearEntry, clearStart, clearWords, distributeSlides, entryHeads, formatTime, markInSequence, markSection, markStart, markWord, slideAt, slideStarts, slideWords, wordsInSlide } from "./timeline";
 
   let {
@@ -68,7 +69,8 @@
   let timedWords = $derived(slideWords(expanded).map((w) => (w ? w.filter((x) => x !== null).length : 0)));
   let playingRow = $derived(syncOpen ? slideAt(starts, player.positionMs) : null);
   let errors = $derived(issues?.filter((i) => i.severity === "error") ?? []);
-  let ownTrack = $derived(song.audio !== null && player.path === song.audio.path);
+  /** La pista cargada es la de esta canción (la original o la sin voz). */
+  let ownTrack = $derived(player.path !== null && (player.path === song.audio?.path || player.path === song.instrumental?.path));
   /** La pista de la canción en pantalla está sonando: el editor no la interrumpe. */
   let liveBusy = $derived(player.playing && onScreen.song !== null && !ownTrack);
   let heads = $derived(entryHeads(expanded));
@@ -130,6 +132,9 @@
       }
       song.audio = { path: picked.path, name: picked.name, durationMs: duration };
       song.mode = "track";
+      // La pista sin voz era de la anterior.
+      song.instrumental = null;
+      song.voiceless = false;
       // Pista nueva, tonalidad por saber: se escucha enseguida.
       song.key = null;
       changed();
@@ -151,9 +156,12 @@
 
   async function ensureTrack(): Promise<boolean> {
     if (!song.audio || liveBusy) return false;
-    if (ownTrack && player.status === "ready") return true;
-    const duration = await player.load(song.audio.path);
-    if (duration !== null && duration !== song.audio.durationMs) song.audio.durationMs = duration;
+    const path = trackPath(song)!;
+    if (player.path === path && player.status === "ready") return true;
+    // La otra versión de esta misma canción ya está cargada: se cambia en el mismo punto.
+    if (ownTrack && player.status === "ready") return player.switchTo(path);
+    const duration = await player.load(path);
+    if (duration !== null && path === song.audio.path && duration !== song.audio.durationMs) song.audio.durationMs = duration;
     if (duration !== null) player.setTranspose(song.transpose ?? 0);
     return duration !== null;
   }
@@ -207,8 +215,34 @@
 
   /** La pista en mono para el reconocedor de voz (la carga si hace falta). */
   async function trackForLyrics() {
-    if (!(await ensureTrack())) return null;
+    // La letra se oye en la original: la sin voz no la tiene.
+    if (!song.audio || !(await ensureTrack()) || !(await player.switchTo(song.audio.path))) return null;
     return player.mono(16_000);
+  }
+
+  // ---- Con voz o sin voz ----
+
+  async function useInstrumental(track: AudioTrack) {
+    song.instrumental = track;
+    // Se sacó para usarla: queda elegida (se puede volver a la original con un clic).
+    song.voiceless = true;
+    changed();
+    if (ownTrack) await player.switchTo(track.path);
+  }
+
+  async function setVoiceless(voiceless: boolean) {
+    song.voiceless = voiceless;
+    changed();
+    const path = trackPath(song);
+    if (ownTrack && path) await player.switchTo(path);
+  }
+
+  async function dropInstrumental() {
+    const old = song.instrumental?.path;
+    song.instrumental = null;
+    song.voiceless = false;
+    changed();
+    if (old && player.path === old && song.audio) await player.switchTo(song.audio.path);
   }
 
   function useDraft(draft: string, info: { lines: number; loops: number }) {
@@ -451,10 +485,12 @@
 
   function close(saved: MediaSong | null) {
     // La pista del editor se para; la de la canción en pantalla sigue sonando.
-    if (ownTrack && onScreen.song?.audio?.path !== player.path) player.pause();
+    const live = onScreen.song;
+    const liveTrack = live !== null && (player.path === live.audio?.path || player.path === live.instrumental?.path);
+    if (ownTrack && !liveTrack) player.pause();
     player.setRate(1);
     // Fuera del editor, el tono es el de la canción en pantalla (si es esta pista) o el original.
-    if (ownTrack) player.setTranspose(onScreen.song?.audio?.path === player.path ? (onScreen.song?.transpose ?? 0) : 0);
+    if (ownTrack) player.setTranspose(liveTrack ? (live?.transpose ?? 0) : 0);
     onclose(saved);
   }
 </script>
@@ -521,6 +557,7 @@
       {#if keyState === "failed"}<p class="small warn" role="status">{t("studio.key.failed")}</p>{/if}
       <ToneControl value={song.transpose ?? 0} songKey={song.key} onchange={setTone} disabled={liveBusy} />
       <p class="muted small">{t("studio.tone.hint")}</p>
+      <VoiceRemover audio={song.audio} instrumental={song.instrumental ?? null} voiceless={!!song.voiceless} disabled={liveBusy} onseparated={useInstrumental} onvoice={setVoiceless} onremove={dropInstrumental} />
       <LyricsFromTrack title={song.title} durationMs={song.audio.durationMs} disabled={liveBusy} prepare={trackForLyrics} ondraft={useDraft} />
       {#if heard?.empty}<p class="warn small" role="status">{t("whisper.nothing")}</p>{/if}
     {/if}

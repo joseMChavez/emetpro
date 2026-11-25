@@ -270,6 +270,10 @@ export interface MediaSong {
   transpose?: number;
   /** Tonalidad de la pista (detectada y corregible); ausente = sin saber. */
   key?: MusicalKey | null;
+  /** La pista sin la voz, sacada de `audio`: dura lo mismo y sirven los mismos tiempos. */
+  instrumental?: AudioTrack | null;
+  /** Suena la pista sin voz en lugar de la original. */
+  voiceless?: boolean;
 }
 
 /** Tónica en semitonos desde Do (0 = Do, 7 = Sol) y si es menor. */
@@ -282,7 +286,7 @@ export type IssueCode =
   | "missingTitle" | "invalidReference" | "missingId" | "duplicateId" | "emptyOrder" | "unknownSection" | "trackWithoutAudio" | "invalidAudio"
   | "timeOutOfTrack" | "entriesOutOfOrder" | "sameEntryStart" | "unknownSlide" | "duplicateCue" | "slidesOutOfOrder" | "slideOutsideEntry"
   | "linesOutOfOrder" | "lineOutsideSlide" | "lineEndBeforeStart" | "linesOverlap" | "wordsOutOfOrder" | "wordOutsideLine"
-  | "unusedSection" | "emptySlide" | "untimedEntry" | "untimedSlide" | "extraLineCues" | "extraWordCues" | "shortSlide" | "invalidTranspose" | "invalidKey";
+  | "unusedSection" | "emptySlide" | "untimedEntry" | "untimedSlide" | "extraLineCues" | "extraWordCues" | "shortSlide" | "invalidTranspose" | "invalidKey" | "instrumentalMissing";
 
 export interface SongIssue {
   code: IssueCode;
@@ -339,6 +343,12 @@ export type CommandError =
   | { code: "whisperModelMissing" }
   | { code: "whisperDownload"; message: string }
   | { code: "transcribeFailed"; reason: string }
+  | { code: "separatorBusy" }
+  | { code: "separatorCanceled" }
+  | { code: "separatorUnavailable" }
+  | { code: "separatorMissing" }
+  | { code: "separatorDownload"; message: string }
+  | { code: "separateFailed"; reason: string }
   | { code: "importFailed"; file: string; reason: string }
   | { code: "exportFailed"; reason: string }
   | { code: "copyFailed"; file: string; reason: string }
@@ -623,6 +633,14 @@ export interface Platform {
   /** Lo que se oye en la pista (mono, 16 kHz); `language` "" = que lo adivine; `prompt`: contexto (el título). */
   studioTranscribe(samples: Float32Array, language: string, prompt: string): Promise<WhisperSegment[]>;
   onWhisperProgress(handler: (progress: WhisperProgress) => void): Promise<() => void>;
+  /** Separador para quitar la voz de una pista (descarga aparte, D-029). */
+  studioSeparatorStatus(): Promise<SeparatorStatus>;
+  studioSeparatorDownload(): Promise<void>;
+  studioSeparatorCancel(): Promise<void>;
+  studioSeparatorRemove(): Promise<void>;
+  /** Saca la pista sin voz de una pista de la app; `name` es el que se mostrará. */
+  studioSeparate(path: string, name: string): Promise<AudioTrack>;
+  onSeparatorProgress(handler: (progress: SeparatorProgress) => void): Promise<() => void>;
 
   // Planes del culto (features/plans)
   /** Con fecha primero, del más próximo al más lejano; después los que no tienen fecha. */
@@ -729,3 +747,18 @@ export interface WhisperSegment {
   /** Probabilidad de que no haya voz (0 a 1). */
   noSpeech: number;
 }
+
+export interface SeparatorStatus {
+  /** Hay separador para este sistema (no lo hay para Mac con Intel). */
+  available: boolean;
+  ready: boolean;
+  busy: boolean;
+  /** Lo que ocupa la descarga, en bytes. */
+  size: number;
+}
+
+export type SeparatorProgress =
+  | { phase: "download"; done: number; total: number }
+  | { phase: "reading" }
+  | { phase: "separating"; done: number; total: number }
+  | { phase: "saving" };

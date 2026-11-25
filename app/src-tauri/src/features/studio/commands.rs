@@ -6,6 +6,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 
 use super::domain::{is_web_link, Issue, MediaSong};
+use super::separate::runtime as separator;
 use super::{whisper, AUDIO_DIR};
 use sha2::Digest;
 
@@ -179,16 +180,23 @@ pub fn studio_open_reference(app: AppHandle, url: String) -> Result<(), CommandE
     app.opener().open_url(url.trim(), None::<&str>).map_err(internal)
 }
 
+/// Una pista de la carpeta de la app (la ruta viene de la interfaz: no puede servir para leer otro archivo).
+fn app_track(app: &AppHandle, path: &str) -> Result<PathBuf, CommandError> {
+    let missing = || CommandError::FileMissing { path: path.to_string() };
+    let root = audio_dir(app)?.canonicalize().map_err(|_| missing())?;
+    let file = Path::new(path).canonicalize().map_err(|_| missing())?;
+    if !file.starts_with(&root) || !is_track(&file) || !file.is_file() {
+        return Err(CommandError::InvalidContent);
+    }
+    Ok(file)
+}
+
 /// Los bytes de una pista, para decodificarla en la consola (Web Audio). Solo pistas de la carpeta de la app:
 /// la ruta viene de la interfaz y no puede servir para leer otro archivo del equipo.
 #[tauri::command]
 pub async fn studio_read_audio(app: AppHandle, path: String) -> Result<Response, CommandError> {
     let missing = || CommandError::FileMissing { path: path.clone() };
-    let root = audio_dir(&app)?.canonicalize().map_err(|_| missing())?;
-    let file = Path::new(&path).canonicalize().map_err(|_| missing())?;
-    if !file.starts_with(&root) || !is_track(&file) || !file.is_file() {
-        return Err(CommandError::InvalidContent);
-    }
+    let file = app_track(&app, &path)?;
     let bytes = tauri::async_runtime::spawn_blocking(move || std::fs::read(file))
         .await
         .map_err(internal)?
@@ -299,4 +307,98 @@ mod transcribe_tests {
         assert_eq!(percent_decode("100%"), "100%");
         assert_eq!(percent_decode("a%zzb"), "a%zzb");
     }
+}
+
+// ---- Quitar la voz (separate) ----
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeparatorStatus {
+    /// Hay separador para este sistema.
+    pub available: bool,
+    pub ready: bool,
+    pub busy: bool,
+    /// Lo que ocupa la descarga (motor y modelo), en bytes.
+    pub size: u64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase", tag = "phase")]
+pub enum SeparatorProgress {
+    Download { done: u64, total: u64 },
+    Reading,
+    Separating { done: usize, total: usize },
+    Saving,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeparatedTrack {
+    pub path: String,
+    pub name: String,
+    pub duration_ms: u32,
+}
+
+#[tauri::command]
+pub fn studio_separator_status(app: AppHandle) -> Result<SeparatorStatus, CommandError> {
+    let data = app.path().app_data_dir().map_err(internal)?;
+    Ok(SeparatorStatus {
+        available: separator::available(),
+        ready: separator::installed(&data).is_some(),
+        busy: separator::busy(),
+        size: separator::download_size(),
+    })
+}
+
+/// Descarga el motor y el modelo para quitar la voz (solo cuando el usuario lo pide). Avance: «separator-progress».
+#[tauri::command]
+pub async fn studio_separator_download(app: AppHandle) -> Result<(), CommandError> {
+    let data = app.path().app_data_dir().map_err(internal)?;
+    let emitter = app.clone();
+    let total = separator::download_size();
+    separator::download(&data, move |done| {
+        let _ = emitter.emit("separator-progress", SeparatorProgress::Download { done, total });
+    })
+    .await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn studio_separator_cancel() {
+    separator::cancel();
+}
+
+#[tauri::command]
+pub fn studio_separator_remove(app: AppHandle) -> Result<(), CommandError> {
+    let data = app.path().app_data_dir().map_err(internal)?;
+    separator::remove(&data)?;
+    Ok(())
+}
+
+/// Saca la pista sin voz de una pista de la app y la guarda junto a ella (FLAC). Avance: «separator-progress».
+#[tauri::command]
+pub async fn studio_separate(app: AppHandle, path: String, name: String) -> Result<SeparatedTrack, CommandError> {
+    let data = app.path().app_data_dir().map_err(internal)?;
+    let source = app_track(&app, &path)?;
+    let stem = source.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "pista".into());
+    let short = uuid::Uuid::new_v4().simple().to_string()[..8].to_string();
+    let target = source.with_file_name(format!("{stem}-sin-voz-{short}.flac"));
+    let emitter = app.clone();
+    let out = target.clone();
+    let duration_ms = tauri::async_runtime::spawn_blocking(move || {
+        separator::separate(&data, &source, &out, move |step| {
+            let progress = match step {
+                separator::Step::Reading => SeparatorProgress::Reading,
+                separator::Step::Separating(done, total) => SeparatorProgress::Separating { done, total },
+                separator::Step::Saving => SeparatorProgress::Saving,
+            };
+            let _ = emitter.emit("separator-progress", progress);
+        })
+    })
+    .await
+    .map_err(internal)?
+    .inspect_err(|_| {
+        let _ = std::fs::remove_file(&target);
+    })?;
+    Ok(SeparatedTrack { path: target.to_string_lossy().into_owned(), name, duration_ms })
 }

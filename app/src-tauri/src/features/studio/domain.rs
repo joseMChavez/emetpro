@@ -165,6 +165,12 @@ pub struct MediaSong {
     /// None = sin saber (canción en directo o aún sin detectar).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<MusicalKey>,
+    /// La pista sin la voz, sacada de `audio` (studio/separate): dura lo mismo y sirven los mismos tiempos.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instrumental: Option<AudioTrack>,
+    /// Suena la pista sin voz en lugar de la original.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub voiceless: bool,
 }
 
 /// Tonalidad: la tónica en semitonos desde Do (0 = Do, 7 = Sol, 11 = Si) y si es menor.
@@ -205,6 +211,8 @@ pub enum IssueCode {
     InvalidTranspose,
     /// La tónica no es una de las doce notas (0 a 11).
     InvalidKey,
+    /// Se eligió sonar sin voz, pero no hay pista sin voz.
+    InstrumentalMissing,
     MissingId,
     DuplicateId,
     EmptyOrder,
@@ -323,6 +331,9 @@ impl MediaSong {
                 None => issues.add(IssueCode::TrackWithoutAudio, Location::default()),
                 Some(audio) if audio.duration_ms == 0 => issues.add(IssueCode::InvalidAudio, Location::default()),
                 Some(audio) => self.check_timing(audio.duration_ms, &mut issues),
+            }
+            if self.voiceless && self.instrumental.is_none() {
+                issues.add(IssueCode::InstrumentalMissing, Location::default());
             }
         }
         // En directo los tiempos no se usan: se conservan tal cual por si vuelve a la pista, y se revisan entonces.
@@ -596,6 +607,8 @@ mod tests {
             animation: None,
             transpose: 0,
             key: None,
+            instrumental: None,
+            voiceless: false,
         }
     }
 
@@ -709,6 +722,20 @@ mod tests {
         assert_eq!(back.key, Some(MusicalKey { tonic: 7, minor: false }));
         song.key = Some(MusicalKey { tonic: 12, minor: true });
         assert_eq!(codes(&song), vec![IssueCode::InvalidKey]);
+    }
+
+    #[test]
+    fn sin_voz_hace_falta_la_pista_sin_voz() {
+        let mut song = sample();
+        assert!(!serde_json::to_string(&song).unwrap().contains("voiceless"));
+        song.voiceless = true;
+        assert_eq!(codes(&song), vec![IssueCode::InstrumentalMissing]);
+        song.instrumental = Some(AudioTrack { path: "/p/sin-voz.flac".into(), name: "sin voz".into(), duration_ms: 125_000 });
+        assert_eq!(codes(&song), vec![]);
+        // En directo no suena ninguna pista: no se exige.
+        song.instrumental = None;
+        song.mode = SongMode::Live;
+        assert_eq!(codes(&song), vec![]);
     }
 
     #[test]

@@ -41,6 +41,14 @@ qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 # Sacar la letra de una pista (Media Studio, D-029): whisper.cpp compilado dentro de la app; el modelo se descarga
 # aparte solo si el usuario lo pide (studio/whisper.rs). Necesita cmake y clang para compilar.
 whisper-rs = "=0.16.0"
+# Quitar la voz de una pista (studio/separate): htdemucs en ONNX Runtime, cargado en tiempo de ejecución desde la copia
+# que se descarga solo si el usuario lo pide (no se descarga nada al compilar). Todo en Rust puro, sin código en C.
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["load-dynamic", "std"] }
+rustfft = "=6.4.1"
+symphonia = { version = "=0.6.1", default-features = false, features = ["mp3", "aac", "isomp4", "flac", "ogg", "vorbis", "wav", "pcm", "all-meta", "opt-simd"] }
+rubato = "=5.0.1"
+flacenc = { version = "=0.5.1", default-features = false }
+zip = { version = "=9.4.2", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 
 # whisper.cpp sin optimizar tarda muchísimo más: también optimizado al compilar para probar.

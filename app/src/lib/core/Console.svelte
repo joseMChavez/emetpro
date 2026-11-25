@@ -32,7 +32,7 @@
   import { screenKey } from "$lib/features/output/history.svelte";
   import StudioTransport from "$lib/features/studio/StudioTransport.svelte";
   import BehindTrack from "$lib/features/studio/BehindTrack.svelte";
-  import { armAutoplay, finishSong, goTo as studioGoTo, keepInBackground, sectionTarget, toggleLoop, wordOnScreen } from "$lib/features/studio/live.svelte";
+  import { armAutoplay, finishSong, goTo as studioGoTo, keepInBackground, sectionTarget, setVoiceless, toggleLoop, wordOnScreen } from "$lib/features/studio/live.svelte";
   import { player as studioPlayer } from "$lib/features/studio/player.svelte";
 
   const MONITOR_POLL_MS = 2000;
@@ -375,6 +375,7 @@
       case "trackFinish": return finishSong();
       case "trackBackground": return keepInBackground();
       case "trackTone": return studioPlayer.setTranspose(command.semitones);
+      case "trackVoice": return setVoiceless(command.voiceless);
       case "studioSection": {
         const n = sectionTarget(command.id);
         if (n !== null) goLive(n);

@@ -555,6 +555,14 @@
                 </div>
                 {#if studio.key}<p class="studio-key">♪ {keyWithTone(studio.key, tone)}</p>{/if}
               {/if}
+              {#if studio.voiceless !== undefined && studio.voiceless !== null}
+                {@const voiceless = studio.voiceless}
+                <div class="studio-row voice" role="group" aria-label={t("separator.plays")}>
+                  <span class="muted">{t("separator.plays")}</span>
+                  <button class="btn" aria-pressed={!voiceless} disabled={connection !== "open"} onclick={() => command({ type: "trackVoice", voiceless: false })}>{t("separator.withVoice")}</button>
+                  <button class="btn" aria-pressed={voiceless} disabled={connection !== "open"} onclick={() => command({ type: "trackVoice", voiceless: true })}>{t("separator.withoutVoice")}</button>
+                </div>
+              {/if}
             {/if}
             <div class="studio-sections" role="group" aria-label={t("studio.sections")}>
               {#each studio.sections as section (section.id)}
@@ -1003,6 +1011,8 @@
   .studio { display: flex; flex-direction: column; gap: 8px; }
   .studio-row { display: flex; flex-wrap: wrap; gap: 8px; }
   .studio-row.tone { align-items: center; }
+  .studio-row.voice { align-items: center; }
+  .studio-row.voice .btn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); font-weight: 750; }
   .studio-row.tone .btn { min-width: 52px; font-size: 20px; font-weight: 700; }
   .studio-behind { margin: 0; font-weight: 700; color: var(--live); }
   .studio-row .play { flex: 1; min-width: 140px; min-height: 56px; font-size: 18px; }

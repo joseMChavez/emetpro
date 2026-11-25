@@ -34,7 +34,8 @@ export type RemoteCommand =
   /** Saltar a una sección de la canción en pantalla (la pista la sigue). */
   | { type: "studioSection"; id: string }
   /** El tono de la canción que suena (semitonos, de −6 a +6). */
-  | { type: "trackTone"; semitones: number };
+  | { type: "trackTone"; semitones: number }
+  | { type: "trackVoice"; voiceless: boolean };
 
 /** Algo que se puede volver a poner en pantalla desde el teléfono: lo preparado en la consola o lo reciente. */
 export interface RemoteItem {
@@ -108,6 +109,8 @@ export interface RemoteStudio {
   transpose?: number;
   /** La tonalidad de la pista, si se sabe: el teléfono dice en cuál suena con el tono puesto. */
   key?: MusicalKey | null;
+  /** Suena sin voz; null si la canción no tiene versión sin voz (no se puede elegir). */
+  voiceless?: boolean | null;
   sections: { id: string; name: string; current: boolean }[];
   /**
    * Se puso otra cosa en pantalla y la canción sigue sonando: su título. `asking`: todavía no se eligió entre

@@ -832,8 +832,8 @@ fn place(
             map.insert(f, copy.to_string_lossy().into_owned());
             Ok(())
         };
-        if let Some(audio) = &song.audio {
-            copy_ref(&audio.path, true)?;
+        for track in song.audio.iter().chain(song.instrumental.iter()) {
+            copy_ref(&track.path, true)?;
         }
         for path in song.background.iter().chain(song.sections.iter().filter_map(|s| s.background.as_ref())) {
             copy_ref(path, false)?;

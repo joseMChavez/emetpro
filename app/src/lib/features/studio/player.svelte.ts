@@ -60,6 +60,11 @@ class Player {
   private latency = 0;
   private routed = false;
   private buffer: AudioBuffer | null = null;
+  /**
+   * La otra versión de la canción ya decodificada (con o sin voz), para cambiar en el mismo punto sin silencio.
+   * Solo una: cada pista decodificada ocupa unos 80 MB cada 4 minutos.
+   */
+  private spare = new Map<string, AudioBuffer>();
   private source: AudioBufferSourceNode | null = null;
   private gain: GainNode | null = null;
   /** Dónde empezó a sonar el trozo actual: segundo de la pista y momento del reloj del audio. */
@@ -82,9 +87,10 @@ class Player {
     this.buffer = null;
     this.offset = 0;
     this.positionMs = 0;
+    const kept = this.spare.get(path);
+    this.spare.clear();
     try {
-      const bytes = await platform.studioReadAudio(path);
-      const buffer = await this.context().decodeAudioData(bytes);
+      const buffer = kept ?? (await this.decode(path));
       // Mientras se decodificaba se pidió otra pista: esta ya no sirve.
       if (token !== this.loading) return null;
       this.buffer = buffer;
@@ -98,6 +104,56 @@ class Player {
       platform.logError(`media studio: pista ${path}: ${this.error}`).catch(() => {});
       return null;
     }
+  }
+
+  private async decode(path: string): Promise<AudioBuffer> {
+    const bytes = await platform.studioReadAudio(path);
+    return this.context().decodeAudioData(bytes);
+  }
+
+  /** Decodifica de antemano la otra versión de la canción cargada (con o sin voz). */
+  async preload(path: string) {
+    if (this.path === path || this.spare.has(path)) return;
+    const token = this.loading;
+    try {
+      const buffer = await this.decode(path);
+      // Si mientras tanto se cargó otra canción, ya no sirve.
+      if (token !== this.loading) return;
+      this.spare.clear();
+      this.spare.set(path, buffer);
+    } catch (e) {
+      platform.logError(`media studio: pista ${path}: ${(e as { message?: string })?.message ?? e}`).catch(() => {});
+    }
+  }
+
+  /**
+   * Cambia a la otra versión de la misma canción (con o sin voz) en el mismo punto: si suena, con un fundido
+   * cruzado corto, sin silencio. Devuelve false si no se pudo (y sigue la que sonaba).
+   */
+  async switchTo(path: string): Promise<boolean> {
+    if (this.path === path) return true;
+    if (!this.buffer || !this.path || this.status !== "ready") return (await this.load(path)) !== null;
+    const token = this.loading;
+    let buffer = this.spare.get(path);
+    if (!buffer) {
+      try {
+        buffer = await this.decode(path);
+      } catch (e) {
+        platform.logError(`media studio: pista ${path}: ${(e as { message?: string })?.message ?? e}`).catch(() => {});
+        return false;
+      }
+      if (token !== this.loading) return false;
+    }
+    // La que sonaba queda de reserva para volver a ella al momento.
+    this.spare.clear();
+    this.spare.set(this.path, this.buffer);
+    const at = this.now() / 1000;
+    this.buffer = buffer;
+    this.path = path;
+    this.durationMs = Math.round(buffer.duration * 1000);
+    if (this.playing) this.startSource(Math.min(at, buffer.duration));
+    else this.offset = Math.min(at, buffer.duration);
+    return true;
   }
 
   private context(): AudioContext {
@@ -127,6 +183,7 @@ class Player {
     this.stopSource();
     this.playing = false;
     this.buffer = null;
+    this.spare.clear();
     this.path = null;
     this.status = "empty";
     this.positionMs = 0;

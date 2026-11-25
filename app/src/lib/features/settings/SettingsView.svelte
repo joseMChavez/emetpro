@@ -15,6 +15,8 @@
   import { loadOffice, office, removeOffice } from "$lib/features/presentations/office.svelte";
   import { loadRecognizer, recognizer, removeRecognizer } from "$lib/features/studio/recognizer.svelte";
   import RecognizerDownload from "$lib/features/studio/RecognizerDownload.svelte";
+  import { loadSeparator, removeSeparator, separator } from "$lib/features/studio/separator.svelte";
+  import SeparatorDownload from "$lib/features/studio/SeparatorDownload.svelte";
   import { platform, type BibleInfo, type OutputStyle } from "$lib/platform";
   import { resetSettings, SECTIONS, setSetting, settings } from "$lib/core/settings.svelte";
   import { setTheme, type ThemeChoice } from "$lib/core/theme.svelte";
@@ -37,7 +39,7 @@
   ];
 
   /** Sección, o «bible:<id>» para quitar una versión concreta. */
-  type Section = keyof typeof SECTIONS | "songs" | "plans" | "all" | "bibles" | "office" | "whisper" | `bible:${string}`;
+  type Section = keyof typeof SECTIONS | "songs" | "plans" | "all" | "bibles" | "office" | "whisper" | "separator" | `bible:${string}`;
 
   let path = $state<string | null | undefined>(undefined);
   let waitDraft = $state(settings.obsWaitMessage);
@@ -98,6 +100,10 @@
     if (confirmed("plans")) run(resetPlans, "plans");
   }
 
+  function removeSeparatorCopy() {
+    if (confirmed("separator")) run(removeSeparator, "separator");
+  }
+
   function removeWhisper() {
     if (confirmed("whisper")) run(removeRecognizer, "whisper");
   }
@@ -128,6 +134,7 @@
     platform.storePath().then((p) => (path = p)).catch(() => (path = null));
     loadOffice().catch((e) => onerror(toMessage(e)));
     loadRecognizer().catch((e) => onerror(toMessage(e)));
+    loadSeparator().catch((e) => onerror(toMessage(e)));
   });
 </script>
 
@@ -287,6 +294,30 @@
         <RecognizerDownload />
       {/if}
       {#if recognizer.error}<p class="warn small">{t(recognizer.error.key, recognizer.error.params)}</p>{/if}
+    {/if}
+  </section>
+
+  <section class="card">
+    <h2>{t("settings.separator")}</h2>
+    <p class="muted small">{t("settings.separatorIntro")}</p>
+    {#if separator.status}
+      <div class="row">
+        <span class="label">htdemucs + ONNX Runtime</span>
+        <span class="muted">{t(separator.status.ready ? "settings.whisperReady" : "settings.whisperNone")}</span>
+      </div>
+      {#if !separator.status.available}
+        <p class="warn small">{t("error.separatorUnavailable")}</p>
+      {:else if separator.status.ready}
+        <div class="foot">
+          {#if done === "separator"}<span class="ok small">{t("settings.restored")}</span>{/if}
+          <button class="btn" class:danger={confirming === "separator"} onclick={removeSeparatorCopy} disabled={separator.status.busy}>
+            {confirming === "separator" ? t("settings.confirm") : t("settings.separatorRemove")}
+          </button>
+        </div>
+      {:else}
+        <SeparatorDownload />
+      {/if}
+      {#if separator.error}<p class="warn small">{t(separator.error.key, separator.error.params)}</p>{/if}
     {/if}
   </section>
 

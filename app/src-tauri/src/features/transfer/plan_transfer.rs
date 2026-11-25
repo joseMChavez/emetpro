@@ -134,6 +134,14 @@ pub fn pack_studio(song: &MediaSong, mut add: impl FnMut(&str, bool) -> Option<u
         Some(audio)
     });
     song.audio = audio;
+    let instrumental = song.instrumental.take().and_then(|mut track| {
+        track.path = file_ref(add(&track.path, true)?);
+        Some(track)
+    });
+    song.instrumental = instrumental;
+    if song.instrumental.is_none() {
+        song.voiceless = false;
+    }
     song.background = song.background.as_deref().and_then(|p| add(p, false)).map(file_ref);
     for section in &mut song.sections {
         section.background = section.background.as_deref().and_then(|p| add(p, false)).map(file_ref);
@@ -154,6 +162,14 @@ pub fn unpack_studio(mut song: MediaSong, tracks: &HashMap<usize, String>, backg
     if song.audio.is_none() {
         song.mode = SongMode::Live;
     }
+    let instrumental = song.instrumental.take().and_then(|mut track| {
+        track.path = get(tracks, &track.path)?;
+        Some(track)
+    });
+    song.instrumental = instrumental;
+    if song.instrumental.is_none() {
+        song.voiceless = false;
+    }
     song.background = song.background.as_deref().and_then(|p| get(backgrounds, p));
     for section in &mut song.sections {
         section.background = section.background.as_deref().and_then(|p| get(backgrounds, p));
@@ -167,6 +183,9 @@ pub fn same_studio_song(a: &MediaSong, b: &MediaSong) -> bool {
         let mut song = song.clone();
         if let Some(audio) = &mut song.audio {
             audio.path.clear();
+        }
+        if let Some(track) = &mut song.instrumental {
+            track.path.clear();
         }
         song.background = None;
         for section in &mut song.sections {
@@ -275,6 +294,8 @@ mod tests {
         serde_json::from_value(serde_json::json!({
             "id": "ms1", "title": "Sublime gracia", "mode": "track",
             "audio": {"path": "/casa/pistas/ag.mp3", "name": "ag.mp3", "durationMs": 1000},
+            "instrumental": {"path": "/casa/pistas/ag-sin-voz.flac", "name": "ag.mp3 (sin voz)", "durationMs": 1000},
+            "voiceless": true,
             "background": "/casa/fondos/aurora.svg",
             "sections": [{"id": "c", "kind": "chorus", "slides": [{"id": "a", "lines": ["Gloria"]}], "background": "/casa/fondos/luces.svg"}],
             "order": [{"id": "e", "section": "c", "timing": {"startMs": 0, "slides": [{"slide": "a", "startMs": 0}]}}]
@@ -295,18 +316,21 @@ mod tests {
             files.push(path.to_string());
             Some(files.len() - 1)
         });
-        assert_eq!(files, ["/casa/pistas/ag.mp3", "/casa/fondos/aurora.svg", "/casa/fondos/luces.svg"]);
+        assert_eq!(files, ["/casa/pistas/ag.mp3", "/casa/pistas/ag-sin-voz.flac", "/casa/fondos/aurora.svg", "/casa/fondos/luces.svg"]);
         assert_eq!(packed.audio.as_ref().unwrap().path, "@0");
-        assert_eq!(packed.background.as_deref(), Some("@1"));
-        assert_eq!(packed.sections[0].background.as_deref(), Some("@2"));
+        assert_eq!(packed.instrumental.as_ref().unwrap().path, "@1");
+        assert_eq!(packed.background.as_deref(), Some("@2"));
+        assert_eq!(packed.sections[0].background.as_deref(), Some("@3"));
         // Los tiempos viajan tal cual.
         assert_eq!(packed.order, studio_song().order);
 
         // En la iglesia: las rutas de este equipo.
-        let tracks = HashMap::from([(0, "/iglesia/pistas/ab/ag.mp3".to_string())]);
-        let backgrounds = HashMap::from([(1, "/iglesia/fondos/aurora.svg".to_string()), (2, "/iglesia/fondos/luces.svg".to_string())]);
+        let tracks = HashMap::from([(0, "/iglesia/pistas/ab/ag.mp3".to_string()), (1, "/iglesia/pistas/ab/ag-sin-voz.flac".to_string())]);
+        let backgrounds = HashMap::from([(2, "/iglesia/fondos/aurora.svg".to_string()), (3, "/iglesia/fondos/luces.svg".to_string())]);
         let song = unpack_studio(packed.clone(), &tracks, &backgrounds);
         assert_eq!(song.audio.as_ref().unwrap().path, "/iglesia/pistas/ab/ag.mp3");
+        assert_eq!(song.instrumental.as_ref().unwrap().path, "/iglesia/pistas/ab/ag-sin-voz.flac");
+        assert!(song.voiceless);
         assert_eq!(song.mode, SongMode::Track);
         assert_eq!(song.sections[0].background.as_deref(), Some("/iglesia/fondos/luces.svg"));
         assert!(same_studio_song(&song, &studio_song()));
@@ -324,6 +348,8 @@ mod tests {
         let song = unpack_studio(forged, &HashMap::new(), &HashMap::new());
         assert!(song.audio.is_none());
         assert_eq!(song.mode, SongMode::Live);
+        // Sin su pista sin voz, ya no se puede elegir sonar sin voz.
+        assert!(song.instrumental.is_none() && !song.voiceless);
         assert!(song.background.is_none() && song.sections[0].background.is_none());
 
         // Un elemento de una canción que no se importó no entra en el plan.
