@@ -728,6 +728,8 @@ const it: Record<MessageKey, string> = {
   "separator.removeTrack": "Elimina la versione senza voce",
   "separator.ready": "Versione senza voce pronta. In parti difficili può restare un po' di voce: ascoltala prima del culto.",
   "separator.voicelessName": "senza voce",
+  "separator.missing": "Non è stata trovata la versione senza voce di questa canzone: suona l'originale.",
+  "separator.missingEditor": "Non è stato trovato il file della versione senza voce: suona l'originale. Preparala di nuovo con «Prepara con la traccia» o eliminala.",
   "prepare.open": "Prepara con la traccia",
   "prepare.intro": "EmetPro ascolta la traccia e prepara la canzone: ricava il testo se non c'è, mette ogni diapositiva dove si canta e salva una versione senza voce. Controlla prima di salvare.",
   "prepare.lyrics": "Ricava il testo dalla traccia",

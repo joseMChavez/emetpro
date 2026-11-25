@@ -157,13 +157,20 @@
     }
   }
 
+  /** La versión sin voz elegida no se pudo cargar: se trabaja con la original y se avisa. */
+  let voicelessMissing = $state(false);
+
   async function ensureTrack(): Promise<boolean> {
     if (!song.audio || liveBusy) return false;
-    const path = trackPath(song)!;
+    const path = voicelessMissing ? song.audio.path : trackPath(song)!;
     if (player.path === path && player.status === "ready") return true;
     // La otra versión de esta misma canción ya está cargada: se cambia en el mismo punto.
-    if (ownTrack && player.status === "ready") return player.switchTo(path);
-    const duration = await player.load(path);
+    if (ownTrack && player.status === "ready" && (await player.switchTo(path))) return true;
+    let duration = await player.load(path);
+    if (duration === null && path !== song.audio.path) {
+      voicelessMissing = true;
+      duration = await player.load(song.audio.path);
+    }
     if (duration !== null && path === song.audio.path && duration !== song.audio.durationMs) song.audio.durationMs = duration;
     if (duration !== null) player.setTranspose(song.transpose ?? 0);
     return duration !== null;
@@ -262,6 +269,7 @@
   // ---- Con voz o sin voz ----
 
   async function useInstrumental(track: AudioTrack) {
+    voicelessMissing = false;
     song.instrumental = track;
     // Se sacó para usarla: queda elegida (se puede volver a la original con un clic).
     song.voiceless = true;
@@ -582,6 +590,7 @@
       {#if keyState === "failed"}<p class="small warn" role="status">{t("studio.key.failed")}</p>{/if}
       <ToneControl value={song.transpose ?? 0} songKey={song.key} onchange={setTone} disabled={liveBusy} />
       <p class="muted small">{t("studio.tone.hint")}</p>
+      {#if voicelessMissing && song.instrumental}<p class="warn small" role="status">{t("separator.missingEditor")}</p>{/if}
       {#if song.instrumental}
         <VoiceRemover voiceless={!!song.voiceless} disabled={liveBusy} onvoice={setVoiceless} onremove={dropInstrumental} />
       {/if}

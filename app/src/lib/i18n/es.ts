@@ -727,6 +727,8 @@ const es = {
   "separator.removeTrack": "Borrar la versión sin voz",
   "separator.ready": "Versión sin voz lista. Puede quedar algún resto de voz en partes difíciles: escúchala antes del culto.",
   "separator.voicelessName": "sin voz",
+  "separator.missing": "No se encontró la versión sin voz de esta canción: suena la original.",
+  "separator.missingEditor": "No se encontró el archivo de la versión sin voz: suena la original. Vuelve a prepararla con «Preparar con la pista» o bórrala.",
   "prepare.open": "Preparar con la pista",
   "prepare.intro": "EmetPro escucha la pista y deja la canción lista: saca la letra si no la tiene, pone cada diapositiva donde se canta y guarda una versión sin voz. Revísalo antes de guardar.",
   "prepare.lyrics": "Sacar la letra de la pista",

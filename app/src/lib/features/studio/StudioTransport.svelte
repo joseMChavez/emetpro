@@ -84,6 +84,7 @@
         </div>
         <!-- Si quien dirige pide otro tono en el momento: dura hasta la próxima canción (el guardado, en el editor). -->
         <ToneControl value={player.transpose} songKey={onScreen.song?.key} onchange={(n) => player.setTranspose(n)} />
+        {#if onScreen.voicelessMissing}<p class="notice small" role="status">{t("separator.missing")}</p>{/if}
         {#if canChooseVoice()}
           <!-- Si quien dirige no llegó, sin voz al momento (o al revés): sigue en el mismo punto, sin silencio. -->
           <div class="voice" role="group" aria-label={t("separator.plays")}>

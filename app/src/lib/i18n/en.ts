@@ -728,6 +728,8 @@ const en: Record<MessageKey, string> = {
   "separator.removeTrack": "Delete the version without voice",
   "separator.ready": "Version without voice ready. Some voice may remain in difficult parts: listen to it before the service.",
   "separator.voicelessName": "without voice",
+  "separator.missing": "The version without voice of this song was not found: the original plays.",
+  "separator.missingEditor": "The file of the version without voice was not found: the original plays. Prepare it again with “Prepare with the track” or delete it.",
   "prepare.open": "Prepare with the track",
   "prepare.intro": "EmetPro listens to the track and gets the song ready: it gets the lyrics if there are none, places each slide where it is sung and saves a version without voice. Review it before saving.",
   "prepare.lyrics": "Get the lyrics from the track",

@@ -18,6 +18,8 @@ export const onScreen = $state({
   loop: false,
   /** Suena la pista sin voz (si la canción la tiene). Empieza como se guardó y se cambia en el momento. */
   voiceless: false,
+  /** Se eligió sin voz pero su archivo no se pudo cargar (borrado, movido): suena la original y se avisa. */
+  voicelessMissing: false,
 });
 
 /**
@@ -100,7 +102,7 @@ export function trackReady(): boolean {
 
 /** La canción en pantalla tiene pista sin voz: se puede elegir en el momento. */
 export function canChooseVoice(): boolean {
-  return hasTrack(onScreen.song) && !!onScreen.song.instrumental;
+  return hasTrack(onScreen.song) && !!onScreen.song.instrumental && !onScreen.voicelessMissing;
 }
 
 /** Con voz o sin voz, en el momento: sigue en el mismo punto, sin silencio. Dura hasta otra canción. */
@@ -161,6 +163,7 @@ export function follow(content: OutputContent) {
   pending = false;
   onScreen.loop = false;
   onScreen.voiceless = !!song.voiceless && !!song.instrumental;
+  onScreen.voicelessMissing = false;
   cursor = content.index;
   // El tono guardado de la canción (lo que se cambie en vivo dura hasta otra canción).
   player.setTranspose(song.transpose ?? 0);
@@ -168,13 +171,20 @@ export function follow(content: OutputContent) {
   const path = onScreenPath(song)!;
   if (player.path === path && player.playing) return;
   const index = content.index;
-  player.load(path).then((duration) => {
+  player.load(path).then(async (loaded) => {
+    let duration = loaded;
+    // Sin su versión sin voz la canción tiene que sonar igual: con la original, y se avisa.
+    if (duration === null && onScreen.voiceless && song.audio && onScreen.song?.id === song.id) {
+      onScreen.voiceless = false;
+      onScreen.voicelessMissing = true;
+      duration = await player.load(song.audio.path);
+    }
     if (duration === null || onScreen.song?.id !== song.id) return;
     player.seek(ranges[index]?.start ?? 0);
     // Enviada a pantalla: empieza a sonar sola, como un video. Restaurada al abrir la consola, no.
     if (play) player.play();
     // La otra versión (con o sin voz) lista de antemano, para cambiar en el momento sin silencio.
-    const other = song.instrumental ? trackPath(song, !onScreen.voiceless) : null;
+    const other = song.instrumental && !onScreen.voicelessMissing ? trackPath(song, !onScreen.voiceless) : null;
     if (other) player.preload(other);
   });
 }

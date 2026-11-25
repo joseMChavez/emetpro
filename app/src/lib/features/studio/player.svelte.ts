@@ -100,7 +100,9 @@ class Player {
     } catch (e) {
       if (token !== this.loading) return null;
       this.status = "error";
-      this.error = (e as { message?: string })?.message ?? String(e);
+      // Los errores de los comandos son objetos con su código (fileMissing…): se registran enteros.
+      const err = e as { message?: string; code?: string };
+      this.error = err?.message ?? (err?.code ? JSON.stringify(e) : String(e));
       platform.logError(`media studio: pista ${path}: ${this.error}`).catch(() => {});
       return null;
     }
