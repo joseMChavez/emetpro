@@ -3,6 +3,7 @@
 mod commands;
 pub mod domain;
 pub mod repo;
+pub mod whisper;
 
 use tauri::plugin::{Builder, TauriPlugin};
 use tauri::Wry;
@@ -11,6 +12,19 @@ pub const NAME: &str = "studio";
 
 /// Carpeta de las pistas dentro de la de la app. Aparte de `medios`: la limpieza de los planes no la toca.
 pub const AUDIO_DIR: &str = "pistas";
+
+impl From<whisper::WhisperError> for crate::core::error::CommandError {
+    fn from(e: whisper::WhisperError) -> Self {
+        use crate::core::error::CommandError;
+        match e {
+            whisper::WhisperError::Busy => CommandError::WhisperBusy,
+            whisper::WhisperError::Unsupported => CommandError::WhisperUnsupported,
+            whisper::WhisperError::Canceled => CommandError::WhisperCanceled,
+            whisper::WhisperError::Download(message) => CommandError::WhisperDownload { message },
+            whisper::WhisperError::Failed(reason) => CommandError::TranscribeFailed { reason },
+        }
+    }
+}
 
 pub fn plugin() -> TauriPlugin<Wry> {
     Builder::new(NAME)
@@ -23,6 +37,11 @@ pub fn plugin() -> TauriPlugin<Wry> {
             commands::studio_read_audio,
             commands::studio_open_reference,
             commands::studio_save_svg,
+            commands::studio_whisper_status,
+            commands::studio_whisper_download,
+            commands::studio_whisper_cancel,
+            commands::studio_whisper_remove,
+            commands::studio_transcribe,
         ])
         .build()
 }

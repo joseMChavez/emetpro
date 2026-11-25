@@ -15,7 +15,7 @@ Ideas acordadas que todavía no se hacen. Cuando una se decide, pasa a [DECISION
    - Costo: modelos de 300 MB a 1 GB; varios minutos por canción sin tarjeta gráfica (se hace al preparar, no en el culto); el `.emetplan` pesa más con varias pistas.
    - Primer paso: prueba de concepto para ver qué modelo da buena calidad en una computadora normal, cuánto tarda y **qué licencia tienen sus pesos** (algunos no permiten repartirlos en una app).
 2. **Sincronización automática por la voz**: con la voz separada, un modelo tipo Whisper propone dónde empieza cada línea, para revisar. Depende de la 1.
-   - **Sacar la letra de la misma canción** cuando no se tiene a mano: el modelo la transcribe y el usuario la limpia en el editor (palabras mal oídas, repeticiones, cortes de línea y de diapositiva) antes de usarla. La transcripción es un borrador: no se guarda ni se proyecta sin revisarla.
+   - Sacar la letra de la misma canción ya está hecho (D-029): falta usar los tiempos de cada línea para proponer la sincronización, y mejorar la letra con la voz separada.
    - Con la letra ya escrita, el modelo solo propone los tiempos; con la letra sacada de la canción, propone texto y tiempos a la vez.
    - Respetar los derechos de la letra como hoy (D-029): transcribir no da permiso para proyectarla.
 3. **Onda de cada pista** en el editor. Depende de la 1.

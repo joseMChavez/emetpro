@@ -56,7 +56,7 @@ jobs:
           sudo apt-get update
           # Sin libgstreamer1.0-dev: en ubuntu-22.04 choca con libunwind (v0.2.2). Basta con los plugins.
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev pkg-config \
-            gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav cmake clang libclang-dev
 
       - uses: actions/setup-node@v7
         with:
@@ -79,6 +79,9 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # whisper.cpp (sacar la letra, D-029) no se optimiza para el procesador del servidor: se cerraría en uno más
+          # antiguo. Queda con AVX2/FMA, y la app comprueba antes de usarlo que el procesador los tiene.
+          GGML_NATIVE: "OFF"
         with:
           projectPath: app
           args: ${{ matrix.args }}

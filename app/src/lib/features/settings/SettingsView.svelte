@@ -13,6 +13,8 @@
   import { toMessage, type Message } from "$lib/core/messages";
   import { obs, waitMessage } from "$lib/features/stream/obs.svelte";
   import { loadOffice, office, removeOffice } from "$lib/features/presentations/office.svelte";
+  import { loadRecognizer, recognizer, removeRecognizer } from "$lib/features/studio/recognizer.svelte";
+  import RecognizerDownload from "$lib/features/studio/RecognizerDownload.svelte";
   import { platform, type BibleInfo, type OutputStyle } from "$lib/platform";
   import { resetSettings, SECTIONS, setSetting, settings } from "$lib/core/settings.svelte";
   import { setTheme, type ThemeChoice } from "$lib/core/theme.svelte";
@@ -35,7 +37,7 @@
   ];
 
   /** Sección, o «bible:<id>» para quitar una versión concreta. */
-  type Section = keyof typeof SECTIONS | "songs" | "plans" | "all" | "bibles" | "office" | `bible:${string}`;
+  type Section = keyof typeof SECTIONS | "songs" | "plans" | "all" | "bibles" | "office" | "whisper" | `bible:${string}`;
 
   let path = $state<string | null | undefined>(undefined);
   let waitDraft = $state(settings.obsWaitMessage);
@@ -96,6 +98,10 @@
     if (confirmed("plans")) run(resetPlans, "plans");
   }
 
+  function removeWhisper() {
+    if (confirmed("whisper")) run(removeRecognizer, "whisper");
+  }
+
   function removeOfficeCopy() {
     if (confirmed("office")) run(removeOffice, "office");
   }
@@ -121,6 +127,7 @@
     if (bibles.all.length === 0) loadBibles().catch((e) => onerror(toMessage(e)));
     platform.storePath().then((p) => (path = p)).catch(() => (path = null));
     loadOffice().catch((e) => onerror(toMessage(e)));
+    loadRecognizer().catch((e) => onerror(toMessage(e)));
   });
 </script>
 
@@ -256,6 +263,30 @@
       {:else if office.status.downloadable}
         <OfficeDownload />
       {/if}
+    {/if}
+  </section>
+
+  <section class="card">
+    <h2>{t("settings.whisper")}</h2>
+    <p class="muted small">{t("settings.whisperIntro")}</p>
+    {#if recognizer.status}
+      <div class="row">
+        <span class="label">Whisper «small»</span>
+        <span class="muted">{t(recognizer.status.ready ? "settings.whisperReady" : "settings.whisperNone")}</span>
+      </div>
+      {#if !recognizer.status.supported}
+        <p class="warn small">{t("error.whisperUnsupported")}</p>
+      {:else if recognizer.status.ready}
+        <div class="foot">
+          {#if done === "whisper"}<span class="ok small">{t("settings.restored")}</span>{/if}
+          <button class="btn" class:danger={confirming === "whisper"} onclick={removeWhisper} disabled={recognizer.status.busy}>
+            {confirming === "whisper" ? t("settings.confirm") : t("settings.whisperRemove")}
+          </button>
+        </div>
+      {:else}
+        <RecognizerDownload />
+      {/if}
+      {#if recognizer.error}<p class="warn small">{t(recognizer.error.key, recognizer.error.params)}</p>{/if}
     {/if}
   </section>
 

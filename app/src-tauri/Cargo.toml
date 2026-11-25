@@ -38,7 +38,14 @@ axum = { version = "0.8", default-features = false, features = ["ws", "http1", "
 tower-http = { version = "0.6", default-features = false, features = ["fs"] }
 tower = { version = "0.5", default-features = false, features = ["util"] }
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+# Sacar la letra de una pista (Media Studio, D-029): whisper.cpp compilado dentro de la app; el modelo se descarga
+# aparte solo si el usuario lo pide (studio/whisper.rs). Necesita cmake y clang para compilar.
+whisper-rs = "=0.16.0"
 
+
+# whisper.cpp sin optimizar tarda muchísimo más: también optimizado al compilar para probar.
+[profile.dev.package.whisper-rs-sys]
+opt-level = 3
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

@@ -13,6 +13,7 @@
   import ToneControl from "./ToneControl.svelte";
   import { ANALYSIS_RATE, detectKey } from "./key";
   import { keyFromValue, keyLabel, keyValue } from "./keylabel";
+  import LyricsFromTrack from "./LyricsFromTrack.svelte";
   import { parseLyrics } from "./parse";
   import { dropTroubledTimings, expand, hasTroubledTimings, newId, sectionOf, sectionText, SECTION_KINDS, slideText, studioContent, withText } from "./song";
   import { clearEntry, clearStart, clearWords, distributeSlides, entryHeads, formatTime, markInSequence, markSection, markStart, markWord, slideAt, slideStarts, slideWords, wordsInSlide } from "./timeline";
@@ -41,6 +42,9 @@
   let saving = $state(false);
   let pasteOpen = $state(untrack(() => initial.sections.length === 0));
   let pasteText = $state("");
+  let pasteBox = $state<HTMLElement>();
+  /** Letra sacada de la pista: aviso en el cuadro de pegar, y el borrador si el cuadro ya tenía otro texto. */
+  let heard = $state<{ loops: number; empty: boolean; pending: string | null } | null>(null);
   let syncOpen = $state(false);
   /** Lo escrito en cada sección tal cual (con sus líneas en blanco a medio escribir); el modelo se lee de ahí. */
   let drafts = $state<Record<string, string>>({});
@@ -201,6 +205,25 @@
 
   // ---- Letra, secciones y orden ----
 
+  /** La pista en mono para el reconocedor de voz (la carga si hace falta). */
+  async function trackForLyrics() {
+    if (!(await ensureTrack())) return null;
+    return player.mono(16_000);
+  }
+
+  function useDraft(draft: string, info: { lines: number; loops: number }) {
+    if (!draft) {
+      heard = { loops: info.loops, empty: true, pending: null };
+      return;
+    }
+    // Lo que el usuario ya escribió en el cuadro no se pisa sin preguntar.
+    const keep = pasteText.trim() !== "" && pasteText !== draft;
+    heard = { loops: info.loops, empty: false, pending: keep ? draft : null };
+    if (!keep) pasteText = draft;
+    pasteOpen = true;
+    requestAnimationFrame(() => pasteBox?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  }
+
   function applyPaste() {
     const parsed = parseLyrics(pasteText, newId);
     if (parsed.sections.length === 0) return;
@@ -210,6 +233,7 @@
     drafts = {};
     pasteOpen = false;
     pasteText = "";
+    heard = null;
     next = 0;
     changed();
   }
@@ -497,6 +521,8 @@
       {#if keyState === "failed"}<p class="small warn" role="status">{t("studio.key.failed")}</p>{/if}
       <ToneControl value={song.transpose ?? 0} songKey={song.key} onchange={setTone} disabled={liveBusy} />
       <p class="muted small">{t("studio.tone.hint")}</p>
+      <LyricsFromTrack title={song.title} durationMs={song.audio.durationMs} disabled={liveBusy} prepare={trackForLyrics} ondraft={useDraft} />
+      {#if heard?.empty}<p class="warn small" role="status">{t("whisper.nothing")}</p>{/if}
     {/if}
     {#if picking}<p class="muted small" role="status">{t("studio.preparingTrack")}</p>{/if}
     {#if liveBusy}<p class="muted small">{t("studio.liveBusy")}</p>{/if}
@@ -517,7 +543,20 @@
       <button type="button" class="btn ghost small-btn" onclick={() => (pasteOpen = !pasteOpen)}>{t("studio.pasteLyrics")}</button>
     </div>
     {#if pasteOpen}
-      <div class="paste">
+      <div class="paste" bind:this={pasteBox}>
+        {#if heard && !heard.empty}
+          <div class="heard" role="status">
+            <p class="small">{t("whisper.draftNotice")}</p>
+            {#if heard.loops > 0}<p class="small">{t("whisper.loops", { count: heard.loops })}</p>{/if}
+            {#if heard.pending}
+              <p class="small">{t("whisper.boxHadText")}</p>
+              <div class="row">
+                <button type="button" class="btn small-btn" onclick={() => ((pasteText = heard!.pending!), (heard!.pending = null))}>{t("whisper.useDraft")}</button>
+                <button type="button" class="btn ghost small-btn" onclick={() => (heard!.pending = null)}>{t("whisper.keepMine")}</button>
+              </div>
+            {/if}
+          </div>
+        {/if}
         <textarea class="field" rows="10" bind:value={pasteText} placeholder={t("studio.pastePlaceholder")}></textarea>
         <p class="muted small">{t("studio.pasteHint")}</p>
         <div class="row end">
@@ -684,6 +723,8 @@
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .key-select { width: auto; min-width: 13em; }
+  .heard { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; background: var(--warn-bg); color: var(--warn-text); }
+  .heard p { margin: 0; }
   .key-note { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
   .key-note .small-btn { min-height: 32px; padding: 0 10px; font-size: 13px; }
   .row:has(.key-select) { align-items: flex-end; }

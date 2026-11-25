@@ -4,7 +4,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import type { RemoteCommand } from "$lib/features/remote/protocol";
 import type { BoardMessage } from "$lib/features/remote/board";
-import type { OfficeProgress, OutputState, Platform, StoredSettings, StudioTime, VideoTime } from "./types";
+import type { OfficeProgress, OutputState, Platform, StoredSettings, StudioTime, VideoTime, WhisperProgress } from "./types";
 
 export const tauriPlatform: Platform = {
   listMonitors: () => invoke("plugin:output|list_monitors"),
@@ -60,6 +60,16 @@ export const tauriPlatform: Platform = {
   studioDelete: (id) => invoke("plugin:studio|studio_delete", { id }),
   studioPickAudio: (title, filterName) => invoke("plugin:studio|studio_pick_audio", { title, filterName }),
   studioReadAudio: (path) => invoke("plugin:studio|studio_read_audio", { path }),
+  studioWhisperStatus: () => invoke("plugin:studio|studio_whisper_status"),
+  studioWhisperDownload: () => invoke("plugin:studio|studio_whisper_download"),
+  studioWhisperCancel: () => invoke("plugin:studio|studio_whisper_cancel"),
+  studioWhisperRemove: () => invoke("plugin:studio|studio_whisper_remove"),
+  // Las muestras van tal cual en el cuerpo (decenas de MB: en JSON serían mucho más); el resto, en cabeceras.
+  studioTranscribe: (samples, language, prompt) =>
+    invoke("plugin:studio|studio_transcribe", new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength), {
+      headers: { language, prompt: encodeURIComponent(prompt) },
+    }),
+  onWhisperProgress: (handler) => listen<WhisperProgress>("whisper-progress", (event) => handler(event.payload)),
   studioExport: (title, filterName, fileName, songIds) =>
     invoke("plugin:transfer|studio_export", { title, filterName, fileName, songIds }),
   studioSaveSvg: (svg) => invoke("plugin:studio|studio_save_svg", { svg }),

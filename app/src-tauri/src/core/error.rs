@@ -35,6 +35,16 @@ pub enum CommandError {
     CopyFailed { file: String, reason: String },
     /// No se pudo encender el control remoto (puertos ocupados, permisos…).
     RemoteFailed { reason: String },
+    /// Ya se está descargando el reconocedor de voz o sacando una letra.
+    WhisperBusy,
+    /// Este procesador es demasiado antiguo para el reconocedor de voz.
+    WhisperUnsupported,
+    /// El usuario canceló la descarga del reconocedor o la transcripción.
+    WhisperCanceled,
+    /// Para sacar la letra hace falta descargar antes el reconocedor de voz.
+    WhisperModelMissing,
+    WhisperDownload { message: String },
+    TranscribeFailed { reason: String },
     /// No se pudo leer o escribir la base de datos local.
     Storage { message: String },
     Internal { message: String },

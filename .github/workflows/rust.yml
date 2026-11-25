@@ -9,6 +9,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # whisper.cpp (D-029): igual que en los instaladores.
+  GGML_NATIVE: "OFF"
 
 jobs:
   build:
@@ -21,7 +23,7 @@ jobs:
     - name: Dependencias de Linux
       run: |
         sudo apt-get update
-        sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev pkg-config
+        sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev pkg-config cmake clang libclang-dev
 
     - uses: actions/setup-node@v7
       with:
