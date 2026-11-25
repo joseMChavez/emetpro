@@ -262,7 +262,8 @@ fn environment(library: &Path) -> Result<&'static Environment, SeparatorError> {
         .map_err(|e| SeparatorError::Failed(format!("no se pudo cargar ONNX Runtime: {e}")))
 }
 
-/// Fases que se avisan a la interfaz.
+/// Fases de `separate` (las pruebas).
+#[cfg(test)]
 pub enum Step {
     Reading,
     /// Trozos separados y total.
@@ -270,12 +271,32 @@ pub enum Step {
     Saving,
 }
 
-/// Saca el instrumental de `track` y lo guarda en `target` (FLAC). Devuelve su duración en ms. Bloquea.
+/// Saca el instrumental de `track` y lo guarda en `target` (FLAC). Devuelve su duración en ms. Bloquea. (La app lo
+/// hace con `prepare`, que además oye la letra; esto queda para las pruebas.)
+#[cfg(test)]
 pub fn separate(data: &Path, track: &Path, target: &Path, mut step: impl FnMut(Step)) -> Result<u32, SeparatorError> {
-    let (library, model) = installed(data).ok_or(SeparatorError::Missing)?;
-    let _turn = Turn::take()?;
     step(Step::Reading);
     let mix = audio::decode(track).map_err(SeparatorError::Failed)?;
+    let stems = separate_audio(data, &mix, &mut |k, n| step(Step::Separating(k, n)))?;
+    step(Step::Saving);
+    save_instrumental(target, stems.instrumental, &mix)?;
+    Ok(duration_ms(&mix))
+}
+
+pub fn duration_ms(audio: &audio::Stereo) -> u32 {
+    (audio[0].len() as u64 * 1000 / audio::RATE as u64) as u32
+}
+
+/// Guarda el instrumental al volumen de la original (ver `audio::match_loudness`).
+pub fn save_instrumental(target: &Path, mut instrumental: audio::Stereo, mix: &audio::Stereo) -> Result<(), SeparatorError> {
+    audio::match_loudness(&mut instrumental, mix);
+    audio::write_flac(target, &instrumental).map_err(SeparatorError::Failed)
+}
+
+/// Separa la voz y el resto de una pista ya leída; `progress` recibe los trozos hechos y el total. Bloquea.
+pub fn separate_audio(data: &Path, mix: &audio::Stereo, progress: &mut impl FnMut(usize, usize)) -> Result<demucs::Stems, SeparatorError> {
+    let (library, model) = installed(data).ok_or(SeparatorError::Missing)?;
+    let _turn = Turn::take()?;
     if CANCEL.load(Ordering::SeqCst) {
         return Err(SeparatorError::Canceled);
     }
@@ -295,15 +316,10 @@ pub fn separate(data: &Path, track: &Path, target: &Path, mut step: impl FnMut(S
         let (_, wave) = outputs[1].try_extract_tensor::<f32>().map_err(|e| e.to_string())?;
         Ok(ModelOutput { spec: spec.to_vec(), wave: wave.to_vec() })
     };
-    let stems = demucs::separate(&mix, run, |k, n| step(Step::Separating(k, n)), &CANCEL).map_err(|e| match e {
+    demucs::separate(mix, run, progress, &CANCEL).map_err(|e| match e {
         SeparateError::Canceled => SeparatorError::Canceled,
         SeparateError::Model(e) => SeparatorError::Failed(e),
-    })?;
-    step(Step::Saving);
-    let mut instrumental = stems.instrumental;
-    audio::match_loudness(&mut instrumental, &mix);
-    audio::write_flac(target, &instrumental).map_err(SeparatorError::Failed)?;
-    Ok((mix[0].len() as u64 * 1000 / audio::RATE as u64) as u32)
+    })
 }
 
 #[cfg(test)]

@@ -349,6 +349,7 @@ export type CommandError =
   | { code: "separatorMissing" }
   | { code: "separatorDownload"; message: string }
   | { code: "separateFailed"; reason: string }
+  | { code: "prepareFailed"; reason: string }
   | { code: "importFailed"; file: string; reason: string }
   | { code: "exportFailed"; reason: string }
   | { code: "copyFailed"; file: string; reason: string }
@@ -638,9 +639,13 @@ export interface Platform {
   studioSeparatorDownload(): Promise<void>;
   studioSeparatorCancel(): Promise<void>;
   studioSeparatorRemove(): Promise<void>;
-  /** Saca la pista sin voz de una pista de la app; `name` es el que se mostrará. */
-  studioSeparate(path: string, name: string): Promise<AudioTrack>;
   onSeparatorProgress(handler: (progress: SeparatorProgress) => void): Promise<() => void>;
+  /**
+   * Prepara una canción con su pista de una vez (D-029): lee la pista, separa la voz si hay separador (y guarda la
+   * versión sin voz si `voiceless`), y si `listen` oye la letra con Whisper. `language` "" = que lo adivine.
+   */
+  studioPrepare(path: string, name: string, language: string, prompt: string, listen: boolean, voiceless: boolean): Promise<PreparedTrack>;
+  onPrepareProgress(handler: (progress: PrepareProgress) => void): Promise<() => void>;
 
   // Planes del culto (features/plans)
   /** Con fecha primero, del más próximo al más lejano; después los que no tienen fecha. */
@@ -746,6 +751,8 @@ export interface WhisperSegment {
   text: string;
   /** Probabilidad de que no haya voz (0 a 1). */
   noSpeech: number;
+  /** Sus palabras con el tiempo de cada una (para sincronizar). */
+  words?: { text: string; startMs: number; endMs: number }[];
 }
 
 export interface SeparatorStatus {
@@ -757,8 +764,21 @@ export interface SeparatorStatus {
   size: number;
 }
 
-export type SeparatorProgress =
-  | { phase: "download"; done: number; total: number }
+export type SeparatorProgress = { phase: "download"; done: number; total: number };
+
+export type PrepareProgress =
   | { phase: "reading" }
   | { phase: "separating"; done: number; total: number }
-  | { phase: "saving" };
+  | { phase: "saving" }
+  | { phase: "listening"; percent: number };
+
+export interface PreparedTrack {
+  /** Lo que se oyó, con el tiempo de cada palabra (vacío si no se pidió oír). */
+  segments: WhisperSegment[];
+  /** La versión sin voz, si se pidió. */
+  instrumental: AudioTrack | null;
+  /** Se oyó la voz separada (más fiable que la mezcla). */
+  cleanVoice: boolean;
+  /** Dónde arranca a cantar la voz separada (ms). */
+  onsets: number[];
+}

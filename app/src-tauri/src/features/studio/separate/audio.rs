@@ -67,8 +67,22 @@ pub fn decode(path: &Path) -> Result<Stereo, String> {
 }
 
 fn resample(input: Stereo, from: u32) -> Result<Stereo, String> {
+    resample_to(input, from, RATE)
+}
+
+/// En mono a `rate` (para Whisper, 16 kHz).
+pub fn mono_at(audio: &Stereo, rate: u32) -> Result<Vec<f32>, String> {
+    let mono: Vec<f32> = audio[0].iter().zip(&audio[1]).map(|(l, r)| (l + r) / 2.0).collect();
+    let [out, _] = resample_to([mono.clone(), mono], RATE, rate)?;
+    Ok(out)
+}
+
+fn resample_to(input: Stereo, from: u32, to: u32) -> Result<Stereo, String> {
+    if from == to {
+        return Ok(input);
+    }
     let frames = input[0].len();
-    let mut resampler = Fft::<f32>::new(from as usize, RATE as usize, 1024, 2, FixedSync::Input).map_err(|e| e.to_string())?;
+    let mut resampler = Fft::<f32>::new(from as usize, to as usize, 1024, 2, FixedSync::Input).map_err(|e| e.to_string())?;
     let capacity = resampler.process_all_needed_output_len(frames);
     let mut output = vec![vec![0f32; capacity]; 2];
     let source = SequentialSliceOfVecs::new(&input[..], 2, frames).map_err(|e| e.to_string())?;
@@ -160,6 +174,34 @@ pub fn match_loudness(audio: &mut Stereo, reference: &Stereo) -> f64 {
     gain_db
 }
 
+/// Dónde empieza a cantar la voz (ms): tras al menos 150 ms casi en silencio (35 dB por debajo de su pico), el
+/// primer tramo de 10 ms que suena fuerte (a menos de 25 dB del pico). Sobre la voz separada marca con precisión el
+/// comienzo de cada frase; Whisper dice qué se canta, y esto, cuándo.
+pub fn voice_onsets(voice: &Stereo) -> Vec<u32> {
+    let hop = RATE as usize / 100;
+    let levels: Vec<f64> = (0..voice[0].len() / hop)
+        .map(|i| {
+            let range = i * hop..(i + 1) * hop;
+            let power = voice.iter().flat_map(|c| &c[range.clone()]).map(|v| (*v as f64).powi(2)).sum::<f64>() / (2 * hop) as f64;
+            10.0 * power.max(1e-12).log10()
+        })
+        .collect();
+    let Some(peak) = levels.iter().copied().reduce(f64::max) else { return Vec::new() };
+    let mut onsets = Vec::new();
+    let mut quiet = 0;
+    for (i, level) in levels.iter().enumerate() {
+        if *level < peak - 35.0 {
+            quiet += 1;
+        } else if *level > peak - 25.0 {
+            if quiet >= 15 {
+                onsets.push((i * 10) as u32);
+            }
+            quiet = 0;
+        }
+    }
+    onsets
+}
+
 /// Guarda en FLAC estéreo, 16 bits, 44,1 kHz.
 pub fn write_flac(path: &Path, audio: &Stereo) -> Result<(), String> {
     use flacenc::component::BitRepr;
@@ -223,6 +265,20 @@ mod tests {
         // Lo que ya está al volumen de la original (o más fuerte) no se toca.
         let mut same = reference.clone();
         assert_eq!(match_loudness(&mut same, &reference), 0.0);
+    }
+
+    #[test]
+    fn arranques_de_la_voz() {
+        // Silencio, voz 0,5 s, silencio, voz: dos arranques.
+        let mut voice: Stereo = [vec![0.0; RATE as usize * 3], vec![0.0; RATE as usize * 3]];
+        for range in [RATE as usize..RATE as usize * 3 / 2, RATE as usize * 2..RATE as usize * 5 / 2] {
+            for i in range {
+                let v = (i as f32 * 0.05).sin() * 0.5;
+                voice[0][i] = v;
+                voice[1][i] = v;
+            }
+        }
+        assert_eq!(voice_onsets(&voice), vec![1000, 2000]);
     }
 
     #[test]

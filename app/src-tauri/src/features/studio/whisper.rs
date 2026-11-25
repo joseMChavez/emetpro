@@ -173,6 +173,37 @@ pub struct Segment {
     pub text: String,
     /// Probabilidad de que no haya voz (0 a 1): alta en tramos de música sola.
     pub no_speech: f32,
+    /// Sus palabras con el tiempo de cada una (para sincronizar las diapositivas con lo que se canta).
+    pub words: Vec<Word>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Word {
+    pub text: String,
+    pub start_ms: u32,
+    pub end_ms: u32,
+}
+
+/// Junta los trozos de palabra de Whisper (un trozo que empieza con espacio empieza palabra) y quita los especiales
+/// («[_BEG_]», «<|es|>»). Los tiempos van en centésimas de segundo. (Se probó el modo DTW de whisper.cpp: daba las
+/// palabras hasta 1,2 s tarde; los de los trozos erraban ±0,5 s, y con la voz separada se ajustan a sus arranques.)
+fn join_words(tokens: impl IntoIterator<Item = (String, i64, i64)>) -> Vec<Word> {
+    let ms = |t: i64| (t.max(0) * 10).min(u32::MAX as i64) as u32;
+    let mut words: Vec<Word> = Vec::new();
+    for (text, t0, t1) in tokens {
+        if text.starts_with("[_") || text.starts_with("<|") || text.trim().is_empty() {
+            continue;
+        }
+        match words.last_mut() {
+            Some(last) if !text.starts_with(' ') => {
+                last.text.push_str(&text);
+                last.end_ms = ms(t1).max(last.end_ms);
+            }
+            _ => words.push(Word { text: text.trim().to_string(), start_ms: ms(t0), end_ms: ms(t1) }),
+        }
+    }
+    words
 }
 
 /// Idiomas que se pueden pedir; None = que lo adivine.
@@ -208,6 +239,8 @@ pub fn transcribe(
     params.set_print_realtime(false);
     params.set_print_special(false);
     params.set_print_timestamps(false);
+    // El tiempo de cada trozo de palabra: con él se sabe cuándo se canta cada palabra de la letra.
+    params.set_token_timestamps(true);
     params.set_progress_callback_safe(progress);
     let canceled = Arc::new(AtomicBool::new(false));
     let flag = canceled.clone();
@@ -229,11 +262,18 @@ pub fn transcribe(
         let text = segment.to_str_lossy().map_err(failed)?.trim().to_string();
         // Centésimas de segundo → milisegundos.
         let ms = |t: i64| (t.max(0) * 10).min(u32::MAX as i64) as u32;
+        let tokens = (0..segment.n_tokens()).filter_map(|t| {
+            let token = segment.get_token(t)?;
+            let data = token.token_data();
+            Some((token.to_str_lossy().ok()?.into_owned(), data.t0, data.t1))
+        });
+        let words = join_words(tokens);
         segments.push(Segment {
             start_ms: ms(segment.start_timestamp()),
             end_ms: ms(segment.end_timestamp()),
             text,
             no_speech: segment.no_speech_probability(),
+            words,
         });
     }
     Ok(segments)
@@ -264,6 +304,15 @@ mod tests {
         assert_eq!(samples_from_bytes(&bytes), Some(vec![0.5, -1.0]));
         assert_eq!(samples_from_bytes(&[0, 0, 0]), None);
         assert_eq!(samples_from_bytes(&[]), None);
+    }
+
+    #[test]
+    fn palabras_de_los_trozos() {
+        let tokens = [("[_BEG_]", 0, 0), (" No", 50, 60), ("che", 60, 80), (" de", 80, 90), (" paz", 90, 130), (",", 130, 131), ("<|endoftext|>", 0, 0)];
+        let words = join_words(tokens.iter().map(|(t, a, b)| (t.to_string(), *a, *b)));
+        assert_eq!(words.iter().map(|w| w.text.as_str()).collect::<Vec<_>>(), ["Noche", "de", "paz,"]);
+        assert_eq!((words[0].start_ms, words[0].end_ms), (500, 800));
+        assert_eq!(words[2].end_ms, 1310);
     }
 
     #[test]

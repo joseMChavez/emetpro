@@ -4,7 +4,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import type { RemoteCommand } from "$lib/features/remote/protocol";
 import type { BoardMessage } from "$lib/features/remote/board";
-import type { OfficeProgress, OutputState, Platform, SeparatorProgress, StoredSettings, StudioTime, VideoTime, WhisperProgress } from "./types";
+import type { OfficeProgress, OutputState, Platform, PrepareProgress, SeparatorProgress, StoredSettings, StudioTime, VideoTime, WhisperProgress } from "./types";
 
 export const tauriPlatform: Platform = {
   listMonitors: () => invoke("plugin:output|list_monitors"),
@@ -74,8 +74,10 @@ export const tauriPlatform: Platform = {
   studioSeparatorDownload: () => invoke("plugin:studio|studio_separator_download"),
   studioSeparatorCancel: () => invoke("plugin:studio|studio_separator_cancel"),
   studioSeparatorRemove: () => invoke("plugin:studio|studio_separator_remove"),
-  studioSeparate: (path, name) => invoke("plugin:studio|studio_separate", { path, name }),
   onSeparatorProgress: (handler) => listen<SeparatorProgress>("separator-progress", (event) => handler(event.payload)),
+  studioPrepare: (path, name, language, prompt, listenTo, voiceless) =>
+    invoke("plugin:studio|studio_prepare", { path, name, language, prompt, listen: listenTo, voiceless }),
+  onPrepareProgress: (handler) => listen<PrepareProgress>("prepare-progress", (event) => handler(event.payload)),
   studioExport: (title, filterName, fileName, songIds) =>
     invoke("plugin:transfer|studio_export", { title, filterName, fileName, songIds }),
   studioSaveSvg: (svg) => invoke("plugin:studio|studio_save_svg", { svg }),

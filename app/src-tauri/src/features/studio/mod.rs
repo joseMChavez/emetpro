@@ -3,6 +3,7 @@
 mod commands;
 pub mod domain;
 pub mod repo;
+pub mod prepare;
 pub mod separate;
 pub mod whisper;
 
@@ -42,6 +43,16 @@ impl From<separate::runtime::SeparatorError> for crate::core::error::CommandErro
     }
 }
 
+impl From<prepare::PrepareError> for crate::core::error::CommandError {
+    fn from(e: prepare::PrepareError) -> Self {
+        match e {
+            prepare::PrepareError::Separator(e) => e.into(),
+            prepare::PrepareError::Whisper(e) => e.into(),
+            prepare::PrepareError::Failed(reason) => crate::core::error::CommandError::PrepareFailed { reason },
+        }
+    }
+}
+
 pub fn plugin() -> TauriPlugin<Wry> {
     Builder::new(NAME)
         .invoke_handler(tauri::generate_handler![
@@ -62,7 +73,7 @@ pub fn plugin() -> TauriPlugin<Wry> {
             commands::studio_separator_download,
             commands::studio_separator_cancel,
             commands::studio_separator_remove,
-            commands::studio_separate,
+            commands::studio_prepare,
         ])
         .build()
 }

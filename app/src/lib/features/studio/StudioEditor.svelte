@@ -3,7 +3,7 @@
   import { untrack } from "svelte";
   import { t, tCount } from "$lib/i18n/index.svelte";
   import { toMessage, type Message } from "$lib/core/messages";
-  import { platform, type AudioTrack, type MediaSong, type MusicalKey, type OutputContent, type SectionKind, type SongIssue } from "$lib/platform";
+  import { platform, type AudioTrack, type MediaSong, type MusicalKey, type OutputContent, type PreparedTrack, type SectionKind, type SongIssue } from "$lib/platform";
   import { saveStudioSong, songCredit } from "./library.svelte";
   import { onScreen } from "./live.svelte";
   import { player } from "./player.svelte";
@@ -13,8 +13,10 @@
   import ToneControl from "./ToneControl.svelte";
   import { ANALYSIS_RATE, detectKey } from "./key";
   import { keyFromValue, keyLabel, keyValue } from "./keylabel";
-  import LyricsFromTrack from "./LyricsFromTrack.svelte";
+  import TrackAssistant from "./TrackAssistant.svelte";
   import VoiceRemover from "./VoiceRemover.svelte";
+  import { alignSlides, applySync, heardWords, type PrepareChoice } from "./sync";
+  import { heardLines, lyricsDraft } from "./whisper";
   import { parseLyrics } from "./parse";
   import { dropTroubledTimings, expand, hasTroubledTimings, newId, sectionOf, sectionText, SECTION_KINDS, slideText, studioContent, trackPath, withText } from "./song";
   import { clearEntry, clearStart, clearWords, distributeSlides, entryHeads, formatTime, markInSequence, markSection, markStart, markWord, slideAt, slideStarts, slideWords, wordsInSlide } from "./timeline";
@@ -43,9 +45,10 @@
   let saving = $state(false);
   let pasteOpen = $state(untrack(() => initial.sections.length === 0));
   let pasteText = $state("");
-  let pasteBox = $state<HTMLElement>();
-  /** Letra sacada de la pista: aviso en el cuadro de pegar, y el borrador si el cuadro ya tenía otro texto. */
-  let heard = $state<{ loops: number; empty: boolean; pending: string | null } | null>(null);
+  /** Lo que dejó «Preparar con la pista», para avisarlo (y qué revisar). */
+  let prepared = $state<{ lyrics: boolean; noLyrics: boolean; loops: number; synced: number; total: number; review: number; voice: boolean; cleanVoice: boolean } | null>(null);
+  /** Filas que la sincronización automática dejó para revisar (por aparición y diapositiva). */
+  let reviewRows = $state(new Set<string>());
   let syncOpen = $state(false);
   /** Lo escrito en cada sección tal cual (con sus líneas en blanco a medio escribir); el modelo se lee de ahí. */
   let drafts = $state<Record<string, string>>({});
@@ -213,11 +216,47 @@
 
   // ---- Letra, secciones y orden ----
 
-  /** La pista en mono para el reconocedor de voz (la carga si hace falta). */
-  async function trackForLyrics() {
-    // La letra se oye en la original: la sin voz no la tiene.
-    if (!song.audio || !(await ensureTrack()) || !(await player.switchTo(song.audio.path))) return null;
-    return player.mono(16_000);
+  const rowKey = (e: { entry: { id: string }; slide: { id: string } | null }) => `${e.entry.id}-${e.slide?.id ?? "inst"}`;
+
+  /** Lo que tiene letra para sincronizar. */
+  let hasLyrics = $derived(song.sections.some((s) => s.slides.some((x) => x.lines.some((l) => l.trim()))));
+
+  /** Lo que dejó «Preparar con la pista»: letra (si no había), tiempos y versión sin voz. Queda para revisar. */
+  async function usePrepared(result: PreparedTrack, choice: PrepareChoice) {
+    const note = { lyrics: false, noLyrics: false, loops: 0, synced: 0, total: 0, review: 0, voice: false, cleanVoice: result.cleanVoice };
+    if (choice.lyrics && !hasLyrics) {
+      const { lines, loops } = heardLines(result.segments);
+      note.loops = loops;
+      const parsed = lines.length ? parseLyrics(lyricsDraft(lines, { verse: t("studio.draft.verse"), chorus: t("studio.draft.chorus") }), newId) : null;
+      if (parsed && parsed.sections.length) {
+        song.sections = parsed.sections;
+        song.order = parsed.order;
+        drafts = {};
+        next = 0;
+        note.lyrics = true;
+      } else note.noLyrics = true;
+    }
+    if (choice.sync && hasLyrics) {
+      const source = snapshot();
+      const rows = expand(source);
+      const result2 = alignSlides(rows, heardWords(result.segments), result.onsets);
+      song.order = applySync(source, rows, result2.starts).order;
+      reviewRows = new Set(rows.flatMap((e, k) => (result2.doubtful[k] ? [rowKey(e)] : [])));
+      Object.assign(note, { synced: result2.synced, total: result2.total, review: reviewRows.size });
+      syncOpen = true;
+    }
+    if (result.instrumental) {
+      note.voice = true;
+      await useInstrumental(result.instrumental);
+    }
+    prepared = note;
+    issues = null;
+    changed();
+  }
+
+  /** Antes de preparar: la pista del editor deja de sonar (se va a leer entera). */
+  function pauseForPrepare() {
+    if (ownTrack) player.pause();
   }
 
   // ---- Con voz o sin voz ----
@@ -245,19 +284,6 @@
     if (old && player.path === old && song.audio) await player.switchTo(song.audio.path);
   }
 
-  function useDraft(draft: string, info: { lines: number; loops: number }) {
-    if (!draft) {
-      heard = { loops: info.loops, empty: true, pending: null };
-      return;
-    }
-    // Lo que el usuario ya escribió en el cuadro no se pisa sin preguntar.
-    const keep = pasteText.trim() !== "" && pasteText !== draft;
-    heard = { loops: info.loops, empty: false, pending: keep ? draft : null };
-    if (!keep) pasteText = draft;
-    pasteOpen = true;
-    requestAnimationFrame(() => pasteBox?.scrollIntoView({ block: "start", behavior: "smooth" }));
-  }
-
   function applyPaste() {
     const parsed = parseLyrics(pasteText, newId);
     if (parsed.sections.length === 0) return;
@@ -267,7 +293,6 @@
     drafts = {};
     pasteOpen = false;
     pasteText = "";
-    heard = null;
     next = 0;
     changed();
   }
@@ -557,9 +582,23 @@
       {#if keyState === "failed"}<p class="small warn" role="status">{t("studio.key.failed")}</p>{/if}
       <ToneControl value={song.transpose ?? 0} songKey={song.key} onchange={setTone} disabled={liveBusy} />
       <p class="muted small">{t("studio.tone.hint")}</p>
-      <VoiceRemover audio={song.audio} instrumental={song.instrumental ?? null} voiceless={!!song.voiceless} disabled={liveBusy} onseparated={useInstrumental} onvoice={setVoiceless} onremove={dropInstrumental} />
-      <LyricsFromTrack title={song.title} durationMs={song.audio.durationMs} disabled={liveBusy} prepare={trackForLyrics} ondraft={useDraft} />
-      {#if heard?.empty}<p class="warn small" role="status">{t("whisper.nothing")}</p>{/if}
+      {#if song.instrumental}
+        <VoiceRemover voiceless={!!song.voiceless} disabled={liveBusy} onvoice={setVoiceless} onremove={dropInstrumental} />
+      {/if}
+      <TrackAssistant audio={song.audio} title={song.title} {hasLyrics} hasInstrumental={!!song.instrumental} disabled={liveBusy} prepare={pauseForPrepare} onprepared={usePrepared} />
+      {#if prepared}
+        <div class="prepared" role="status">
+          {#if prepared.lyrics}<p class="small">{t("prepare.lyricsDone")}</p>{/if}
+          {#if prepared.noLyrics}<p class="small">{t("whisper.nothing")}</p>{/if}
+          {#if prepared.loops > 0}<p class="small">{t("whisper.loops", { count: prepared.loops })}</p>{/if}
+          {#if prepared.total > 0}
+            <p class="small">{t(prepared.review > 0 ? "prepare.syncedReview" : "prepare.synced", { synced: prepared.synced, total: prepared.total, review: prepared.review })}{#if !prepared.cleanVoice} {t("prepare.syncedMix")}{/if}</p>
+          {/if}
+          {#if prepared.voice}<p class="small">{t("separator.ready")}</p>{/if}
+          {#if prepared.lyrics || prepared.total > 0}<p class="small">{t("prepare.rights")}</p>{/if}
+          <div class="row end"><button type="button" class="btn ghost small-btn" onclick={() => (prepared = null)}>{t("prepare.understood")}</button></div>
+        </div>
+      {/if}
     {/if}
     {#if picking}<p class="muted small" role="status">{t("studio.preparingTrack")}</p>{/if}
     {#if liveBusy}<p class="muted small">{t("studio.liveBusy")}</p>{/if}
@@ -580,20 +619,7 @@
       <button type="button" class="btn ghost small-btn" onclick={() => (pasteOpen = !pasteOpen)}>{t("studio.pasteLyrics")}</button>
     </div>
     {#if pasteOpen}
-      <div class="paste" bind:this={pasteBox}>
-        {#if heard && !heard.empty}
-          <div class="heard" role="status">
-            <p class="small">{t("whisper.draftNotice")}</p>
-            {#if heard.loops > 0}<p class="small">{t("whisper.loops", { count: heard.loops })}</p>{/if}
-            {#if heard.pending}
-              <p class="small">{t("whisper.boxHadText")}</p>
-              <div class="row">
-                <button type="button" class="btn small-btn" onclick={() => ((pasteText = heard!.pending!), (heard!.pending = null))}>{t("whisper.useDraft")}</button>
-                <button type="button" class="btn ghost small-btn" onclick={() => (heard!.pending = null)}>{t("whisper.keepMine")}</button>
-              </div>
-            {/if}
-          </div>
-        {/if}
+      <div class="paste">
         <textarea class="field" rows="10" bind:value={pasteText} placeholder={t("studio.pastePlaceholder")}></textarea>
         <p class="muted small">{t("studio.pasteHint")}</p>
         <div class="row end">
@@ -698,6 +724,7 @@
                   {/if}
                 </span>
                 {#if e.slide && timedWords[k] > 0}<span class="badge-words" title={t("studio.wordsTimed")}>{timedWords[k]}/{wordsInSlide(e.slide.lines)}</span>{/if}
+                {#if autoRows[k] && reviewRows.has(rowKey(e))}<span class="review" title={t("prepare.reviewHint")}>{t("prepare.review")}</span>{/if}
                 {#if next === k}<span class="tag">{t("studio.nextTag")}</span>{/if}
               </button>
               <button type="button" class="mini" onclick={() => nudge(k, -100)} disabled={starts[k] === null} aria-label={t("studio.earlier")}>−0,1</button>
@@ -760,8 +787,9 @@
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .key-select { width: auto; min-width: 13em; }
-  .heard { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; background: var(--warn-bg); color: var(--warn-text); }
-  .heard p { margin: 0; }
+  .prepared { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; background: var(--warn-bg); color: var(--warn-text); }
+  .prepared p { margin: 0; }
+  .review { flex: none; font-size: 11px; font-weight: 750; padding: 1px 6px; border-radius: 5px; background: var(--warn-bg); color: var(--warn-text); }
   .key-note { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
   .key-note .small-btn { min-height: 32px; padding: 0 10px; font-size: 13px; }
   .row:has(.key-select) { align-items: flex-end; }

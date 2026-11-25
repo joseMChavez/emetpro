@@ -17,7 +17,9 @@ pub struct ModelOutput {
 }
 
 pub struct Stems {
-    /// Todo menos la voz (batería, bajo y otros sumados), [CHANNELS][muestras].
+    /// La voz sola (para que Whisper la oiga sin la banda), [CHANNELS][muestras].
+    pub vocals: [Vec<f32>; CHANNELS],
+    /// Todo menos la voz (batería, bajo y otros sumados).
     pub instrumental: [Vec<f32>; CHANNELS],
 }
 
@@ -68,7 +70,7 @@ pub fn source_wave(stft: &Stft, out: &ModelOutput, source: usize, channel: usize
     wave
 }
 
-/// Separa la voz del resto y devuelve el resto. `model` recibe la onda del trozo [CHANNELS][SEGMENT] y su espectrograma.
+/// Separa la voz del resto. `model` recibe la onda del trozo [CHANNELS][SEGMENT] y su espectrograma.
 pub fn separate(
     mix: &[Vec<f32>; CHANNELS],
     mut model: impl FnMut(&[f32], &[f32]) -> Result<ModelOutput, String>,
@@ -81,6 +83,7 @@ pub fn separate(
     // torch: cat(arange(1, half + 1), arange(SEGMENT - half, 0, -1)) / máximo.
     let weight: Vec<f32> = (0..SEGMENT).map(|i| if i < half { (i + 1) as f32 } else { (SEGMENT - i) as f32 } / half as f32).collect();
     let stft = Stft::default();
+    let mut vocals = [vec![0f32; length], vec![0f32; length]];
     let mut rest = [vec![0f32; length], vec![0f32; length]];
     let mut total = vec![0f32; length];
     let offsets: Vec<usize> = (0..length).step_by(stride).collect();
@@ -92,8 +95,9 @@ pub fn separate(
         let (input, chunk_length, trim) = chunk(mix, offset);
         let mag = magnitude(&stft, &input);
         let out = model(&input, &mag).map_err(SeparateError::Model)?;
-        for source in (0..SOURCES).filter(|s| *s != VOCALS) {
-            for (channel, target) in rest.iter_mut().enumerate() {
+        for source in 0..SOURCES {
+            let targets = if source == VOCALS { &mut vocals } else { &mut rest };
+            for (channel, target) in targets.iter_mut().enumerate() {
                 let wave = source_wave(&stft, &out, source, channel);
                 for i in 0..chunk_length {
                     target[offset + i] += weight[i] * wave[trim + i];
@@ -105,10 +109,10 @@ pub fn separate(
         }
     }
     progress(offsets.len(), offsets.len());
-    for channel in rest.iter_mut() {
+    for channel in vocals.iter_mut().chain(rest.iter_mut()) {
         for (x, w) in channel.iter_mut().zip(&total) {
             *x /= w;
         }
     }
-    Ok(Stems { instrumental: rest })
+    Ok(Stems { vocals, instrumental: rest })
 }

@@ -54,6 +54,8 @@ pub enum CommandError {
     SeparatorMissing,
     SeparatorDownload { message: String },
     SeparateFailed { reason: String },
+    /// No se pudo leer la pista para prepararla.
+    PrepareFailed { reason: String },
     /// No se pudo leer o escribir la base de datos local.
     Storage { message: String },
     Internal { message: String },
