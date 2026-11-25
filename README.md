@@ -47,7 +47,7 @@ Bibles are **not** included in the downloads, because many translations are copy
 
 ## Building from source
 
-Requirements: [Node.js](https://nodejs.org/), [Rust](https://www.rust-lang.org/tools/install) and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your system. On Linux, GStreamer with gst-libav is needed for video.
+Requirements: [Node.js](https://nodejs.org/), [Rust](https://www.rust-lang.org/tools/install) and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your system. On Linux, GStreamer with gst-libav is needed for video. [CMake](https://cmake.org/) and Clang are also needed: the speech recognizer of Media Studio (whisper.cpp) is compiled into the app. For installers meant for other computers, build with `GGML_NATIVE=OFF` so it is not optimized only for your processor.
 
 ```sh
 cd app

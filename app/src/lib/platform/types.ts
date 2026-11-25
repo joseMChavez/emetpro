@@ -333,6 +333,12 @@ export type CommandError =
   | { code: "officeBusy" }
   | { code: "officeCanceled" }
   | { code: "officeDownload"; message: string }
+  | { code: "whisperBusy" }
+  | { code: "whisperUnsupported" }
+  | { code: "whisperCanceled" }
+  | { code: "whisperModelMissing" }
+  | { code: "whisperDownload"; message: string }
+  | { code: "transcribeFailed"; reason: string }
   | { code: "importFailed"; file: string; reason: string }
   | { code: "exportFailed"; reason: string }
   | { code: "copyFailed"; file: string; reason: string }
@@ -609,6 +615,14 @@ export interface Platform {
   studioOpenReference(url: string): Promise<void>;
   /** Los bytes de una pista de la carpeta de la app, para decodificarla. */
   studioReadAudio(path: string): Promise<ArrayBuffer>;
+  /** Reconocedor de voz para sacar la letra de una pista (descarga aparte, D-029). */
+  studioWhisperStatus(): Promise<WhisperStatus>;
+  studioWhisperDownload(): Promise<void>;
+  studioWhisperCancel(): Promise<void>;
+  studioWhisperRemove(): Promise<void>;
+  /** Lo que se oye en la pista (mono, 16 kHz); `language` "" = que lo adivine; `prompt`: contexto (el título). */
+  studioTranscribe(samples: Float32Array, language: string, prompt: string): Promise<WhisperSegment[]>;
+  onWhisperProgress(handler: (progress: WhisperProgress) => void): Promise<() => void>;
 
   // Planes del culto (features/plans)
   /** Con fecha primero, del más próximo al más lejano; después los que no tienen fecha. */
@@ -694,4 +708,24 @@ export interface Platform {
   obsSetDestination(server: string, key: string): Promise<void>;
   obsStartStream(): Promise<void>;
   obsStopStream(): Promise<void>;
+}
+
+export interface WhisperStatus {
+  ready: boolean;
+  busy: boolean;
+  /** false si el procesador es demasiado antiguo: no se ofrece. */
+  supported: boolean;
+  /** Lo que ocupa la descarga, en bytes. */
+  size: number;
+}
+
+export type WhisperProgress = { phase: "download"; done: number; total: number } | { phase: "transcribe"; percent: number };
+
+/** Un tramo de lo que se oyó en la pista, tal cual lo da el reconocedor. */
+export interface WhisperSegment {
+  startMs: number;
+  endMs: number;
+  text: string;
+  /** Probabilidad de que no haya voz (0 a 1). */
+  noSpeech: number;
 }

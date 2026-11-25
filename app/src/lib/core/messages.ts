@@ -31,6 +31,12 @@ export function toMessage(e: unknown): Message {
     case "copyFailed": return { key: "error.copyFailed", params: { file: err.file, reason: err.reason } };
     case "remoteFailed": return { key: "error.remoteFailed", params: { reason: err.reason } };
     case "officeDownload": return { key: "error.officeDownload", params: { message: err.message } };
+    case "whisperBusy": return { key: "error.whisperBusy" };
+    case "whisperUnsupported": return { key: "error.whisperUnsupported" };
+    case "whisperCanceled": return { key: "error.whisperCanceled" };
+    case "whisperModelMissing": return { key: "error.whisperModelMissing" };
+    case "whisperDownload": return { key: "error.whisperDownload", params: { message: err.message } };
+    case "transcribeFailed": return { key: "error.transcribeFailed", params: { reason: err.reason } };
     case "storage": return { key: "error.storage", params: { message: err.message } };
     case "internal": return { key: "error.internal", params: { message: err.message } };
     default: return { key: "error.internal", params: { message: String(e) } };

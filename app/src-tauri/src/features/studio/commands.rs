@@ -2,11 +2,11 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use tauri::ipc::Response;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 
 use super::domain::{is_web_link, Issue, MediaSong};
-use super::AUDIO_DIR;
+use super::{whisper, AUDIO_DIR};
 use sha2::Digest;
 
 use crate::core::assets::allow_media;
@@ -194,4 +194,109 @@ pub async fn studio_read_audio(app: AppHandle, path: String) -> Result<Response,
         .map_err(internal)?
         .map_err(|_| missing())?;
     Ok(Response::new(bytes))
+}
+
+// ---- Sacar la letra de la pista (whisper.rs) ----
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WhisperStatus {
+    /// El modelo está descargado.
+    pub ready: bool,
+    /// Se está descargando o sacando una letra.
+    pub busy: bool,
+    /// Este procesador puede usarlo (ver `whisper::cpu_supported`).
+    pub supported: bool,
+    /// Lo que ocupa la descarga, en bytes.
+    pub size: u64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase", tag = "phase")]
+pub enum WhisperProgress {
+    Download { done: u64, total: u64 },
+    Transcribe { percent: i32 },
+}
+
+#[tauri::command]
+pub fn studio_whisper_status(app: AppHandle) -> Result<WhisperStatus, CommandError> {
+    let data = app.path().app_data_dir().map_err(internal)?;
+    Ok(WhisperStatus { ready: whisper::model(&data).is_some(), busy: whisper::busy(), supported: whisper::cpu_supported(), size: whisper::MODEL_SIZE })
+}
+
+/// Descarga el reconocedor de voz (solo cuando el usuario lo pide). Avisa del avance con «whisper-progress».
+#[tauri::command]
+pub async fn studio_whisper_download(app: AppHandle) -> Result<(), CommandError> {
+    let data = app.path().app_data_dir().map_err(internal)?;
+    let emitter = app.clone();
+    whisper::download(&data, move |done| {
+        let _ = emitter.emit("whisper-progress", WhisperProgress::Download { done, total: whisper::MODEL_SIZE });
+    })
+    .await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn studio_whisper_cancel() {
+    whisper::cancel();
+}
+
+#[tauri::command]
+pub fn studio_whisper_remove(app: AppHandle) -> Result<(), CommandError> {
+    let data = app.path().app_data_dir().map_err(internal)?;
+    whisper::remove(&data)?;
+    Ok(())
+}
+
+/// Saca la letra de una pista. El cuerpo son las muestras (f32 little-endian, mono, 16 kHz, decodificadas en la
+/// consola); el idioma y el título (contexto para Whisper) van en las cabeceras «language» y «prompt»
+/// (codificado como URL). Avisa del avance con «whisper-progress».
+#[tauri::command]
+pub async fn studio_transcribe(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<Vec<whisper::Segment>, CommandError> {
+    let data = app.path().app_data_dir().map_err(internal)?;
+    let model = whisper::model(&data).ok_or(CommandError::WhisperModelMissing)?;
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else { return Err(CommandError::InvalidContent) };
+    let samples = whisper::samples_from_bytes(bytes).ok_or(CommandError::InvalidContent)?;
+    let header = |name: &str| request.headers().get(name).and_then(|v| v.to_str().ok()).unwrap_or_default().to_string();
+    let language = whisper::language(&header("language"));
+    let prompt: String = percent_decode(&header("prompt")).chars().take(200).collect();
+    let emitter = app.clone();
+    let segments = tauri::async_runtime::spawn_blocking(move || {
+        whisper::transcribe(&model, &samples, language, &prompt, move |percent| {
+            let _ = emitter.emit("whisper-progress", WhisperProgress::Transcribe { percent });
+        })
+    })
+    .await
+    .map_err(internal)??;
+    Ok(segments)
+}
+
+/// «%C3%B1» → «ñ». Lo que no se entiende se deja tal cual.
+fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = |b: u8| (b as char).to_digit(16);
+        if let (b'%', Some(h), Some(l)) = (bytes[i], bytes.get(i + 1).and_then(|b| hex(*b)), bytes.get(i + 2).and_then(|b| hex(*b))) {
+            out.push((h * 16 + l) as u8);
+            i += 3;
+            continue;
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+#[cfg(test)]
+mod transcribe_tests {
+    use super::percent_decode;
+
+    #[test]
+    fn titulo_codificado_como_url() {
+        assert_eq!(percent_decode("Noche%20de%20paz%2C%20ni%C3%B1o"), "Noche de paz, niño");
+        assert_eq!(percent_decode("100%"), "100%");
+        assert_eq!(percent_decode("a%zzb"), "a%zzb");
+    }
 }
