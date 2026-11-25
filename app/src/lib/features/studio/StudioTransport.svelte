@@ -5,7 +5,7 @@
   import { t } from "$lib/i18n/index.svelte";
   import type { OutputContent } from "$lib/platform";
   import { studio, loadStudio } from "./library.svelte";
-  import { attach, finishSong, follow, goTo, onScreen, sectionTarget, sectionsOnScreen, synced, toggleLoop, trackReady } from "./live.svelte";
+  import { attach, canChooseVoice, finishSong, follow, goTo, onScreen, sectionTarget, sectionsOnScreen, setVoiceless, synced, toggleLoop, trackReady } from "./live.svelte";
   import { player } from "./player.svelte";
   import { sectionName } from "./names";
   import BehindTrack from "./BehindTrack.svelte";
@@ -39,6 +39,8 @@
   let song = $derived(onScreen.song);
   let sections = $derived(song ? (void onScreen.index, sectionsOnScreen()) : []);
   let withTrack = $derived(song?.mode === "track" && song.audio !== null);
+  /** La pista que se está cargando o que falló es de esta canción (con o sin voz). */
+  let ownPath = $derived(player.path !== null && (player.path === song?.audio?.path || player.path === song?.instrumental?.path));
 
   function jump(sectionId: string) {
     const n = sectionTarget(sectionId);
@@ -51,9 +53,9 @@
   <div class="studio-live">
     {#if withTrack}
       <div class="transport">
-        {#if player.status === "loading" && player.path === song.audio?.path}
+        {#if player.status === "loading" && ownPath}
           <span class="muted small">{t("studio.loadingTrack")}</span>
-        {:else if player.status === "error" && player.path === song.audio?.path}
+        {:else if player.status === "error" && ownPath}
           <span class="error small" role="alert">{t("studio.trackError", { error: player.error ?? "" })}</span>
         {:else if trackReady()}
           <button class="btn primary play" onclick={() => player.toggle()} aria-label={player.playing ? t("studio.pause") : t("studio.play")}>
@@ -68,7 +70,7 @@
             step="100"
             value={player.positionMs}
             aria-label={t("studio.position")}
-            onchange={(e) => player.seek(Number(e.currentTarget.value))}
+            onchange={(e) => player.seek(Number(e.currentTarget.value), "scrub")}
           />
         {/if}
       </div>
@@ -82,6 +84,17 @@
         </div>
         <!-- Si quien dirige pide otro tono en el momento: dura hasta la próxima canción (el guardado, en el editor). -->
         <ToneControl value={player.transpose} songKey={onScreen.song?.key} onchange={(n) => player.setTranspose(n)} />
+        {#if onScreen.voicelessMissing}<p class="notice small" role="status">{t("separator.missing")}</p>{/if}
+        {#if canChooseVoice()}
+          <!-- Si quien dirige no llegó, sin voz al momento (o al revés): sigue en el mismo punto, sin silencio. -->
+          <div class="voice" role="group" aria-label={t("separator.plays")}>
+            <span class="muted small">{t("separator.plays")}</span>
+            <div class="segmented">
+              <button type="button" aria-pressed={!onScreen.voiceless} onclick={() => setVoiceless(false)}>{t("separator.withVoice")}</button>
+              <button type="button" aria-pressed={onScreen.voiceless} onclick={() => setVoiceless(true)}>{t("separator.withoutVoice")}</button>
+            </div>
+          </div>
+        {/if}
       {/if}
       {#if trackReady() && !synced()}
         <!-- Sin tiempos la pista no tiene a dónde saltar: que se note, no que parezca que falla. -->
@@ -107,6 +120,7 @@
 {/if}
 
 <style>
+  .voice { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .studio-live { display: flex; flex-direction: column; gap: 8px; }
   .transport { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .play { min-height: 48px; min-width: 120px; font-size: 16px; gap: 8px; }

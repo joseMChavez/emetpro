@@ -3,7 +3,7 @@
   import { untrack } from "svelte";
   import { t, tCount } from "$lib/i18n/index.svelte";
   import { toMessage, type Message } from "$lib/core/messages";
-  import { platform, type MediaSong, type MusicalKey, type OutputContent, type SectionKind, type SongIssue } from "$lib/platform";
+  import { platform, type AudioTrack, type MediaSong, type MusicalKey, type OutputContent, type PreparedTrack, type SectionKind, type SongIssue } from "$lib/platform";
   import { saveStudioSong, songCredit } from "./library.svelte";
   import { onScreen } from "./live.svelte";
   import { player } from "./player.svelte";
@@ -13,9 +13,12 @@
   import ToneControl from "./ToneControl.svelte";
   import { ANALYSIS_RATE, detectKey } from "./key";
   import { keyFromValue, keyLabel, keyValue } from "./keylabel";
-  import LyricsFromTrack from "./LyricsFromTrack.svelte";
+  import TrackAssistant from "./TrackAssistant.svelte";
+  import VoiceRemover from "./VoiceRemover.svelte";
+  import { alignSlides, applySync, heardWords, type PrepareChoice } from "./sync";
+  import { heardLines, lyricsDraft } from "./whisper";
   import { parseLyrics } from "./parse";
-  import { dropTroubledTimings, expand, hasTroubledTimings, newId, sectionOf, sectionText, SECTION_KINDS, slideText, studioContent, withText } from "./song";
+  import { dropTroubledTimings, expand, hasTroubledTimings, newId, sectionOf, sectionText, SECTION_KINDS, slideText, studioContent, trackPath, withText } from "./song";
   import { clearEntry, clearStart, clearWords, distributeSlides, entryHeads, formatTime, markInSequence, markSection, markStart, markWord, slideAt, slideStarts, slideWords, wordsInSlide } from "./timeline";
 
   let {
@@ -42,9 +45,10 @@
   let saving = $state(false);
   let pasteOpen = $state(untrack(() => initial.sections.length === 0));
   let pasteText = $state("");
-  let pasteBox = $state<HTMLElement>();
-  /** Letra sacada de la pista: aviso en el cuadro de pegar, y el borrador si el cuadro ya tenía otro texto. */
-  let heard = $state<{ loops: number; empty: boolean; pending: string | null } | null>(null);
+  /** Lo que dejó «Preparar con la pista», para avisarlo (y qué revisar). */
+  let prepared = $state<{ lyrics: boolean; noLyrics: boolean; loops: number; synced: number; total: number; review: number; voice: boolean; cleanVoice: boolean } | null>(null);
+  /** Filas que la sincronización automática dejó para revisar (por aparición y diapositiva). */
+  let reviewRows = $state(new Set<string>());
   let syncOpen = $state(false);
   /** Lo escrito en cada sección tal cual (con sus líneas en blanco a medio escribir); el modelo se lee de ahí. */
   let drafts = $state<Record<string, string>>({});
@@ -68,7 +72,8 @@
   let timedWords = $derived(slideWords(expanded).map((w) => (w ? w.filter((x) => x !== null).length : 0)));
   let playingRow = $derived(syncOpen ? slideAt(starts, player.positionMs) : null);
   let errors = $derived(issues?.filter((i) => i.severity === "error") ?? []);
-  let ownTrack = $derived(song.audio !== null && player.path === song.audio.path);
+  /** La pista cargada es la de esta canción (la original o la sin voz). */
+  let ownTrack = $derived(player.path !== null && (player.path === song.audio?.path || player.path === song.instrumental?.path));
   /** La pista de la canción en pantalla está sonando: el editor no la interrumpe. */
   let liveBusy = $derived(player.playing && onScreen.song !== null && !ownTrack);
   let heads = $derived(entryHeads(expanded));
@@ -130,6 +135,9 @@
       }
       song.audio = { path: picked.path, name: picked.name, durationMs: duration };
       song.mode = "track";
+      // La pista sin voz era de la anterior.
+      song.instrumental = null;
+      song.voiceless = false;
       // Pista nueva, tonalidad por saber: se escucha enseguida.
       song.key = null;
       changed();
@@ -149,11 +157,21 @@
     }
   }
 
+  /** La versión sin voz elegida no se pudo cargar: se trabaja con la original y se avisa. */
+  let voicelessMissing = $state(false);
+
   async function ensureTrack(): Promise<boolean> {
     if (!song.audio || liveBusy) return false;
-    if (ownTrack && player.status === "ready") return true;
-    const duration = await player.load(song.audio.path);
-    if (duration !== null && duration !== song.audio.durationMs) song.audio.durationMs = duration;
+    const path = voicelessMissing ? song.audio.path : trackPath(song)!;
+    if (player.path === path && player.status === "ready") return true;
+    // La otra versión de esta misma canción ya está cargada: se cambia en el mismo punto.
+    if (ownTrack && player.status === "ready" && (await player.switchTo(path))) return true;
+    let duration = await player.load(path);
+    if (duration === null && path !== song.audio.path) {
+      voicelessMissing = true;
+      duration = await player.load(song.audio.path);
+    }
+    if (duration !== null && path === song.audio.path && duration !== song.audio.durationMs) song.audio.durationMs = duration;
     if (duration !== null) player.setTranspose(song.transpose ?? 0);
     return duration !== null;
   }
@@ -205,23 +223,73 @@
 
   // ---- Letra, secciones y orden ----
 
-  /** La pista en mono para el reconocedor de voz (la carga si hace falta). */
-  async function trackForLyrics() {
-    if (!(await ensureTrack())) return null;
-    return player.mono(16_000);
+  const rowKey = (e: { entry: { id: string }; slide: { id: string } | null }) => `${e.entry.id}-${e.slide?.id ?? "inst"}`;
+
+  /** Lo que tiene letra para sincronizar. */
+  let hasLyrics = $derived(song.sections.some((s) => s.slides.some((x) => x.lines.some((l) => l.trim()))));
+
+  /** Lo que dejó «Preparar con la pista»: letra (si no había), tiempos y versión sin voz. Queda para revisar. */
+  async function usePrepared(result: PreparedTrack, choice: PrepareChoice) {
+    const note = { lyrics: false, noLyrics: false, loops: 0, synced: 0, total: 0, review: 0, voice: false, cleanVoice: result.cleanVoice };
+    if (choice.lyrics && !hasLyrics) {
+      const { lines, loops } = heardLines(result.segments);
+      note.loops = loops;
+      const parsed = lines.length ? parseLyrics(lyricsDraft(lines, { verse: t("studio.draft.verse"), chorus: t("studio.draft.chorus") }), newId) : null;
+      if (parsed && parsed.sections.length) {
+        song.sections = parsed.sections;
+        song.order = parsed.order;
+        drafts = {};
+        next = 0;
+        note.lyrics = true;
+      } else note.noLyrics = true;
+    }
+    if (choice.sync && hasLyrics) {
+      const source = snapshot();
+      const rows = expand(source);
+      const result2 = alignSlides(rows, heardWords(result.segments), result.onsets);
+      song.order = applySync(source, rows, result2.starts).order;
+      reviewRows = new Set(rows.flatMap((e, k) => (result2.doubtful[k] ? [rowKey(e)] : [])));
+      Object.assign(note, { synced: result2.synced, total: result2.total, review: reviewRows.size });
+      syncOpen = true;
+    }
+    if (result.instrumental) {
+      note.voice = true;
+      await useInstrumental(result.instrumental);
+    }
+    prepared = note;
+    issues = null;
+    changed();
   }
 
-  function useDraft(draft: string, info: { lines: number; loops: number }) {
-    if (!draft) {
-      heard = { loops: info.loops, empty: true, pending: null };
-      return;
-    }
-    // Lo que el usuario ya escribió en el cuadro no se pisa sin preguntar.
-    const keep = pasteText.trim() !== "" && pasteText !== draft;
-    heard = { loops: info.loops, empty: false, pending: keep ? draft : null };
-    if (!keep) pasteText = draft;
-    pasteOpen = true;
-    requestAnimationFrame(() => pasteBox?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  /** Antes de preparar: la pista del editor deja de sonar (se va a leer entera). */
+  function pauseForPrepare() {
+    if (ownTrack) player.pause();
+  }
+
+  // ---- Con voz o sin voz ----
+
+  async function useInstrumental(track: AudioTrack) {
+    voicelessMissing = false;
+    song.instrumental = track;
+    // Se sacó para usarla: queda elegida (se puede volver a la original con un clic).
+    song.voiceless = true;
+    changed();
+    if (ownTrack) await player.switchTo(track.path);
+  }
+
+  async function setVoiceless(voiceless: boolean) {
+    song.voiceless = voiceless;
+    changed();
+    const path = trackPath(song);
+    if (ownTrack && path) await player.switchTo(path);
+  }
+
+  async function dropInstrumental() {
+    const old = song.instrumental?.path;
+    song.instrumental = null;
+    song.voiceless = false;
+    changed();
+    if (old && player.path === old && song.audio) await player.switchTo(song.audio.path);
   }
 
   function applyPaste() {
@@ -233,7 +301,6 @@
     drafts = {};
     pasteOpen = false;
     pasteText = "";
-    heard = null;
     next = 0;
     changed();
   }
@@ -451,10 +518,12 @@
 
   function close(saved: MediaSong | null) {
     // La pista del editor se para; la de la canción en pantalla sigue sonando.
-    if (ownTrack && onScreen.song?.audio?.path !== player.path) player.pause();
+    const live = onScreen.song;
+    const liveTrack = live !== null && (player.path === live.audio?.path || player.path === live.instrumental?.path);
+    if (ownTrack && !liveTrack) player.pause();
     player.setRate(1);
     // Fuera del editor, el tono es el de la canción en pantalla (si es esta pista) o el original.
-    if (ownTrack) player.setTranspose(onScreen.song?.audio?.path === player.path ? (onScreen.song?.transpose ?? 0) : 0);
+    if (ownTrack) player.setTranspose(liveTrack ? (live?.transpose ?? 0) : 0);
     onclose(saved);
   }
 </script>
@@ -521,8 +590,24 @@
       {#if keyState === "failed"}<p class="small warn" role="status">{t("studio.key.failed")}</p>{/if}
       <ToneControl value={song.transpose ?? 0} songKey={song.key} onchange={setTone} disabled={liveBusy} />
       <p class="muted small">{t("studio.tone.hint")}</p>
-      <LyricsFromTrack title={song.title} durationMs={song.audio.durationMs} disabled={liveBusy} prepare={trackForLyrics} ondraft={useDraft} />
-      {#if heard?.empty}<p class="warn small" role="status">{t("whisper.nothing")}</p>{/if}
+      {#if voicelessMissing && song.instrumental}<p class="warn small" role="status">{t("separator.missingEditor")}</p>{/if}
+      {#if song.instrumental}
+        <VoiceRemover voiceless={!!song.voiceless} disabled={liveBusy} onvoice={setVoiceless} onremove={dropInstrumental} />
+      {/if}
+      <TrackAssistant audio={song.audio} title={song.title} {hasLyrics} hasInstrumental={!!song.instrumental} disabled={liveBusy} prepare={pauseForPrepare} onprepared={usePrepared} />
+      {#if prepared}
+        <div class="prepared" role="status">
+          {#if prepared.lyrics}<p class="small">{t("prepare.lyricsDone")}</p>{/if}
+          {#if prepared.noLyrics}<p class="small">{t("whisper.nothing")}</p>{/if}
+          {#if prepared.loops > 0}<p class="small">{t("whisper.loops", { count: prepared.loops })}</p>{/if}
+          {#if prepared.total > 0}
+            <p class="small">{t(prepared.review > 0 ? "prepare.syncedReview" : "prepare.synced", { synced: prepared.synced, total: prepared.total, review: prepared.review })}{#if !prepared.cleanVoice} {t("prepare.syncedMix")}{/if}</p>
+          {/if}
+          {#if prepared.voice}<p class="small">{t("separator.ready")}</p>{/if}
+          {#if prepared.lyrics || prepared.total > 0}<p class="small">{t("prepare.rights")}</p>{/if}
+          <div class="row end"><button type="button" class="btn ghost small-btn" onclick={() => (prepared = null)}>{t("prepare.understood")}</button></div>
+        </div>
+      {/if}
     {/if}
     {#if picking}<p class="muted small" role="status">{t("studio.preparingTrack")}</p>{/if}
     {#if liveBusy}<p class="muted small">{t("studio.liveBusy")}</p>{/if}
@@ -543,20 +628,7 @@
       <button type="button" class="btn ghost small-btn" onclick={() => (pasteOpen = !pasteOpen)}>{t("studio.pasteLyrics")}</button>
     </div>
     {#if pasteOpen}
-      <div class="paste" bind:this={pasteBox}>
-        {#if heard && !heard.empty}
-          <div class="heard" role="status">
-            <p class="small">{t("whisper.draftNotice")}</p>
-            {#if heard.loops > 0}<p class="small">{t("whisper.loops", { count: heard.loops })}</p>{/if}
-            {#if heard.pending}
-              <p class="small">{t("whisper.boxHadText")}</p>
-              <div class="row">
-                <button type="button" class="btn small-btn" onclick={() => ((pasteText = heard!.pending!), (heard!.pending = null))}>{t("whisper.useDraft")}</button>
-                <button type="button" class="btn ghost small-btn" onclick={() => (heard!.pending = null)}>{t("whisper.keepMine")}</button>
-              </div>
-            {/if}
-          </div>
-        {/if}
+      <div class="paste">
         <textarea class="field" rows="10" bind:value={pasteText} placeholder={t("studio.pastePlaceholder")}></textarea>
         <p class="muted small">{t("studio.pasteHint")}</p>
         <div class="row end">
@@ -661,6 +733,7 @@
                   {/if}
                 </span>
                 {#if e.slide && timedWords[k] > 0}<span class="badge-words" title={t("studio.wordsTimed")}>{timedWords[k]}/{wordsInSlide(e.slide.lines)}</span>{/if}
+                {#if autoRows[k] && reviewRows.has(rowKey(e))}<span class="review" title={t("prepare.reviewHint")}>{t("prepare.review")}</span>{/if}
                 {#if next === k}<span class="tag">{t("studio.nextTag")}</span>{/if}
               </button>
               <button type="button" class="mini" onclick={() => nudge(k, -100)} disabled={starts[k] === null} aria-label={t("studio.earlier")}>−0,1</button>
@@ -723,8 +796,9 @@
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .key-select { width: auto; min-width: 13em; }
-  .heard { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; background: var(--warn-bg); color: var(--warn-text); }
-  .heard p { margin: 0; }
+  .prepared { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; background: var(--warn-bg); color: var(--warn-text); }
+  .prepared p { margin: 0; }
+  .review { flex: none; font-size: 11px; font-weight: 750; padding: 1px 6px; border-radius: 5px; background: var(--warn-bg); color: var(--warn-text); }
   .key-note { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
   .key-note .small-btn { min-height: 32px; padding: 0 10px; font-size: 13px; }
   .row:has(.key-select) { align-items: flex-end; }

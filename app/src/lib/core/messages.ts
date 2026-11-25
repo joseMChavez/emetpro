@@ -37,6 +37,13 @@ export function toMessage(e: unknown): Message {
     case "whisperModelMissing": return { key: "error.whisperModelMissing" };
     case "whisperDownload": return { key: "error.whisperDownload", params: { message: err.message } };
     case "transcribeFailed": return { key: "error.transcribeFailed", params: { reason: err.reason } };
+    case "separatorBusy": return { key: "error.separatorBusy" };
+    case "separatorCanceled": return { key: "error.separatorCanceled" };
+    case "separatorUnavailable": return { key: "error.separatorUnavailable" };
+    case "separatorMissing": return { key: "error.separatorMissing" };
+    case "separatorDownload": return { key: "error.separatorDownload", params: { message: err.message } };
+    case "separateFailed": return { key: "error.separateFailed", params: { reason: err.reason } };
+    case "prepareFailed": return { key: "error.prepareFailed", params: { reason: err.reason } };
     case "storage": return { key: "error.storage", params: { message: err.message } };
     case "internal": return { key: "error.internal", params: { message: err.message } };
     default: return { key: "error.internal", params: { message: String(e) } };

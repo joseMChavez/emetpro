@@ -14,6 +14,11 @@ export interface Expanded {
   slideIndex: number;
 }
 
+/** La pista que suena: la sin voz si se elige (`voiceless`) y existe; si no, la original. */
+export function trackPath(song: MediaSong, voiceless = song.voiceless ?? false): string | null {
+  return (voiceless && song.instrumental?.path) || song.audio?.path || null;
+}
+
 export function sectionOf(song: MediaSong, id: string): SongSection | undefined {
   return song.sections.find((s) => s.id === id);
 }

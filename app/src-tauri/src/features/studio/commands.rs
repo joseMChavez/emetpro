@@ -6,7 +6,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 
 use super::domain::{is_web_link, Issue, MediaSong};
-use super::{whisper, AUDIO_DIR};
+use super::separate::runtime as separator;
+use super::{prepare, whisper, AUDIO_DIR};
 use sha2::Digest;
 
 use crate::core::assets::allow_media;
@@ -179,16 +180,23 @@ pub fn studio_open_reference(app: AppHandle, url: String) -> Result<(), CommandE
     app.opener().open_url(url.trim(), None::<&str>).map_err(internal)
 }
 
+/// Una pista de la carpeta de la app (la ruta viene de la interfaz: no puede servir para leer otro archivo).
+fn app_track(app: &AppHandle, path: &str) -> Result<PathBuf, CommandError> {
+    let missing = || CommandError::FileMissing { path: path.to_string() };
+    let root = audio_dir(app)?.canonicalize().map_err(|_| missing())?;
+    let file = Path::new(path).canonicalize().map_err(|_| missing())?;
+    if !file.starts_with(&root) || !is_track(&file) || !file.is_file() {
+        return Err(CommandError::InvalidContent);
+    }
+    Ok(file)
+}
+
 /// Los bytes de una pista, para decodificarla en la consola (Web Audio). Solo pistas de la carpeta de la app:
 /// la ruta viene de la interfaz y no puede servir para leer otro archivo del equipo.
 #[tauri::command]
 pub async fn studio_read_audio(app: AppHandle, path: String) -> Result<Response, CommandError> {
     let missing = || CommandError::FileMissing { path: path.clone() };
-    let root = audio_dir(&app)?.canonicalize().map_err(|_| missing())?;
-    let file = Path::new(&path).canonicalize().map_err(|_| missing())?;
-    if !file.starts_with(&root) || !is_track(&file) || !file.is_file() {
-        return Err(CommandError::InvalidContent);
-    }
+    let file = app_track(&app, &path)?;
     let bytes = tauri::async_runtime::spawn_blocking(move || std::fs::read(file))
         .await
         .map_err(internal)?
@@ -299,4 +307,153 @@ mod transcribe_tests {
         assert_eq!(percent_decode("100%"), "100%");
         assert_eq!(percent_decode("a%zzb"), "a%zzb");
     }
+}
+
+// ---- Quitar la voz (separate) ----
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeparatorStatus {
+    /// Hay separador para este sistema.
+    pub available: bool,
+    pub ready: bool,
+    pub busy: bool,
+    /// Lo que ocupa la descarga (motor y modelo), en bytes.
+    pub size: u64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase", tag = "phase")]
+pub enum SeparatorProgress {
+    Download { done: u64, total: u64 },
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeparatedTrack {
+    pub path: String,
+    pub name: String,
+    pub duration_ms: u32,
+}
+
+#[tauri::command]
+pub fn studio_separator_status(app: AppHandle) -> Result<SeparatorStatus, CommandError> {
+    let data = app.path().app_data_dir().map_err(internal)?;
+    Ok(SeparatorStatus {
+        available: separator::available(),
+        ready: separator::installed(&data).is_some(),
+        busy: separator::busy(),
+        size: separator::download_size(),
+    })
+}
+
+/// Descarga el motor y el modelo para quitar la voz (solo cuando el usuario lo pide). Avance: «separator-progress».
+#[tauri::command]
+pub async fn studio_separator_download(app: AppHandle) -> Result<(), CommandError> {
+    let data = app.path().app_data_dir().map_err(internal)?;
+    let emitter = app.clone();
+    let total = separator::download_size();
+    separator::download(&data, move |done| {
+        let _ = emitter.emit("separator-progress", SeparatorProgress::Download { done, total });
+    })
+    .await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn studio_separator_cancel() {
+    separator::cancel();
+}
+
+#[tauri::command]
+pub fn studio_separator_remove(app: AppHandle) -> Result<(), CommandError> {
+    let data = app.path().app_data_dir().map_err(internal)?;
+    separator::remove(&data)?;
+    Ok(())
+}
+
+// ---- Preparar con la pista: letra, sincronización y sin voz de una vez (prepare.rs) ----
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase", tag = "phase")]
+pub enum PrepareProgress {
+    Reading,
+    Separating { done: usize, total: usize },
+    Saving,
+    Listening { percent: i32 },
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreparedTrack {
+    pub segments: Vec<whisper::Segment>,
+    pub instrumental: Option<SeparatedTrack>,
+    /// Se oyó la voz separada (más fiable que la mezcla).
+    pub clean_voice: bool,
+    /// Dónde arranca a cantar la voz separada (ms), para ajustar las diapositivas; vacío sin separar.
+    pub onsets: Vec<u32>,
+}
+
+/// `listen`: oír la letra (para sacarla o sincronizar). `voiceless`: guardar la versión sin voz con el nombre `name`.
+/// Avance: «prepare-progress».
+#[tauri::command]
+pub async fn studio_prepare(
+    app: AppHandle,
+    path: String,
+    name: String,
+    language: String,
+    prompt: String,
+    listen: bool,
+    voiceless: bool,
+) -> Result<PreparedTrack, CommandError> {
+    let data = app.path().app_data_dir().map_err(internal)?;
+    let source = app_track(&app, &path)?;
+    let model = if listen { Some(whisper::model(&data).ok_or(CommandError::WhisperModelMissing)?) } else { None };
+    if voiceless && separator::installed(&data).is_none() {
+        return Err(if separator::available() { CommandError::SeparatorMissing } else { CommandError::SeparatorUnavailable });
+    }
+    let target = voiceless.then(|| {
+        let stem = source.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "pista".into());
+        let short = uuid::Uuid::new_v4().simple().to_string()[..8].to_string();
+        source.with_file_name(format!("{stem}-sin-voz-{short}.flac"))
+    });
+    let language = whisper::language(&language);
+    let prompt: String = prompt.chars().take(200).collect();
+    let emitter = app.clone();
+    let out = target.clone();
+    let prepared = tauri::async_runtime::spawn_blocking(move || {
+        let request = prepare::Request {
+            track: &source,
+            instrumental: out.as_deref(),
+            whisper_model: model.as_deref(),
+            language,
+            prompt: &prompt,
+        };
+        prepare::prepare(&data, request, move |step| {
+            let progress = match step {
+                prepare::Step::Reading => PrepareProgress::Reading,
+                prepare::Step::Separating(done, total) => PrepareProgress::Separating { done, total },
+                prepare::Step::Saving => PrepareProgress::Saving,
+                prepare::Step::Listening(percent) => PrepareProgress::Listening { percent },
+            };
+            let _ = emitter.emit("prepare-progress", progress);
+        })
+    })
+    .await
+    .map_err(internal)?;
+    let prepared = match prepared {
+        Ok(p) => p,
+        Err(e) => {
+            if let Some(target) = &target {
+                let _ = std::fs::remove_file(target);
+            }
+            return Err(e.into());
+        }
+    };
+    let instrumental = target.zip(prepared.instrumental_ms).map(|(path, duration_ms)| SeparatedTrack {
+        path: path.to_string_lossy().into_owned(),
+        name,
+        duration_ms,
+    });
+    Ok(PreparedTrack { segments: prepared.segments, instrumental, clean_voice: prepared.clean_voice, onsets: prepared.onsets })
 }

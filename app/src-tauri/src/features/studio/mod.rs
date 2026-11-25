@@ -3,6 +3,8 @@
 mod commands;
 pub mod domain;
 pub mod repo;
+pub mod prepare;
+pub mod separate;
 pub mod whisper;
 
 use tauri::plugin::{Builder, TauriPlugin};
@@ -26,6 +28,31 @@ impl From<whisper::WhisperError> for crate::core::error::CommandError {
     }
 }
 
+impl From<separate::runtime::SeparatorError> for crate::core::error::CommandError {
+    fn from(e: separate::runtime::SeparatorError) -> Self {
+        use crate::core::error::CommandError;
+        use separate::runtime::SeparatorError;
+        match e {
+            SeparatorError::Busy => CommandError::SeparatorBusy,
+            SeparatorError::Canceled => CommandError::SeparatorCanceled,
+            SeparatorError::Unavailable => CommandError::SeparatorUnavailable,
+            SeparatorError::Missing => CommandError::SeparatorMissing,
+            SeparatorError::Download(message) => CommandError::SeparatorDownload { message },
+            SeparatorError::Failed(reason) => CommandError::SeparateFailed { reason },
+        }
+    }
+}
+
+impl From<prepare::PrepareError> for crate::core::error::CommandError {
+    fn from(e: prepare::PrepareError) -> Self {
+        match e {
+            prepare::PrepareError::Separator(e) => e.into(),
+            prepare::PrepareError::Whisper(e) => e.into(),
+            prepare::PrepareError::Failed(reason) => crate::core::error::CommandError::PrepareFailed { reason },
+        }
+    }
+}
+
 pub fn plugin() -> TauriPlugin<Wry> {
     Builder::new(NAME)
         .invoke_handler(tauri::generate_handler![
@@ -42,6 +69,11 @@ pub fn plugin() -> TauriPlugin<Wry> {
             commands::studio_whisper_cancel,
             commands::studio_whisper_remove,
             commands::studio_transcribe,
+            commands::studio_separator_status,
+            commands::studio_separator_download,
+            commands::studio_separator_cancel,
+            commands::studio_separator_remove,
+            commands::studio_prepare,
         ])
         .build()
 }

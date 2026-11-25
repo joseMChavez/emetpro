@@ -4,7 +4,7 @@
 // En directo no hay pista: la consola avanza como con cualquier letra.
 import { platform, type MediaSong, type OutputContent } from "$lib/platform";
 import { player } from "./player.svelte";
-import { expand, type Expanded } from "./song";
+import { expand, trackPath, type Expanded } from "./song";
 import { activeWord, nextStart, slideRanges, slideStarts, step, type Range } from "./timeline";
 import { studio } from "./library.svelte";
 
@@ -16,6 +16,10 @@ export const onScreen = $state({
   /** Repetir la sección en pantalla: al terminarla, la pista vuelve a su comienzo (una banda que se queda en el
    *  coro mientras se ora). Se quita al elegir otra diapositiva o sección. */
   loop: false,
+  /** Suena la pista sin voz (si la canción la tiene). Empieza como se guardó y se cambia en el momento. */
+  voiceless: false,
+  /** Se eligió sin voz pero su archivo no se pudo cargar (borrado, movido): suena la original y se avisa. */
+  voicelessMissing: false,
 });
 
 /**
@@ -85,10 +89,30 @@ function hasTrack(song: MediaSong | null): song is MediaSong & { audio: NonNulla
   return song?.mode === "track" && song.audio !== null;
 }
 
+/** La pista de la canción en pantalla (con o sin voz, según lo elegido). */
+function onScreenPath(song: MediaSong): string | null {
+  return trackPath(song, onScreen.voiceless);
+}
+
 /** La pista de la canción en pantalla está cargada y lista. */
 export function trackReady(): boolean {
   const song = onScreen.song;
-  return hasTrack(song) && player.path === song.audio.path && player.status === "ready";
+  return hasTrack(song) && player.path === onScreenPath(song) && player.status === "ready";
+}
+
+/** La canción en pantalla tiene pista sin voz: se puede elegir en el momento. */
+export function canChooseVoice(): boolean {
+  return hasTrack(onScreen.song) && !!onScreen.song.instrumental && !onScreen.voicelessMissing;
+}
+
+/** Con voz o sin voz, en el momento: sigue en el mismo punto, sin silencio. Dura hasta otra canción. */
+export async function setVoiceless(voiceless: boolean) {
+  const song = onScreen.song;
+  if (!hasTrack(song) || !song.instrumental || voiceless === onScreen.voiceless) return;
+  const before = onScreen.voiceless;
+  onScreen.voiceless = voiceless;
+  const path = onScreenPath(song);
+  if (!path || !(await player.switchTo(path))) onScreen.voiceless = before;
 }
 
 /** Sigue lo que está en pantalla. Al llegar una canción con pista, la carga en pausa en su diapositiva. */
@@ -138,17 +162,30 @@ export function follow(content: OutputContent) {
   hold = null;
   pending = false;
   onScreen.loop = false;
+  onScreen.voiceless = !!song.voiceless && !!song.instrumental;
+  onScreen.voicelessMissing = false;
   cursor = content.index;
   // El tono guardado de la canción (lo que se cambie en vivo dura hasta otra canción).
   player.setTranspose(song.transpose ?? 0);
   // Si ya sonaba esta misma pista (se volvió a enviar), no se toca.
-  if (player.path === song.audio.path && player.playing) return;
+  const path = onScreenPath(song)!;
+  if (player.path === path && player.playing) return;
   const index = content.index;
-  player.load(song.audio.path).then((duration) => {
+  player.load(path).then(async (loaded) => {
+    let duration = loaded;
+    // Sin su versión sin voz la canción tiene que sonar igual: con la original, y se avisa.
+    if (duration === null && onScreen.voiceless && song.audio && onScreen.song?.id === song.id) {
+      onScreen.voiceless = false;
+      onScreen.voicelessMissing = true;
+      duration = await player.load(song.audio.path);
+    }
     if (duration === null || onScreen.song?.id !== song.id) return;
     player.seek(ranges[index]?.start ?? 0);
     // Enviada a pantalla: empieza a sonar sola, como un video. Restaurada al abrir la consola, no.
     if (play) player.play();
+    // La otra versión (con o sin voz) lista de antemano, para cambiar en el momento sin silencio.
+    const other = song.instrumental && !onScreen.voicelessMissing ? trackPath(song, !onScreen.voiceless) : null;
+    if (other) player.preload(other);
   });
 }
 
@@ -277,7 +314,7 @@ function onTime(ms: number) {
     // Terminó sola (o con «Terminar»): ya no hay nada de fondo.
     if (!player.playing && (endingBehind || ms >= player.durationMs - 50)) clearBehind();
     const range = behind.range;
-    if (player.playing && behind.loop && range && ms >= range.end - 60 && ms < range.end + 1000) player.seek(range.start, true);
+    if (player.playing && behind.loop && range && ms >= range.end - 60 && ms < range.end + 1000) player.seek(range.start, "auto");
     return;
   }
   sendTime(ms);
@@ -292,5 +329,5 @@ function onTime(ms: number) {
   if (next.kind === "stay") return;
   display(next.index);
   // Orden propio o repetir: la siguiente suena en otra parte de la grabación.
-  if (next.seek !== undefined) player.seek(next.seek, true);
+  if (next.seek !== undefined) player.seek(next.seek, "auto");
 }

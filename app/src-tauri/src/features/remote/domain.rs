@@ -45,6 +45,8 @@ pub enum Command {
     StudioSection { id: String },
     /// El tono de la canción que suena, en semitonos (de −6 a +6; 0 = el original).
     TrackTone { semitones: i8 },
+    /// Con voz o sin voz (si la canción tiene versión sin voz).
+    TrackVoice { voiceless: bool },
 }
 
 /// El texto principal o, en la Biblia, la segunda versión.
@@ -154,6 +156,8 @@ mod tests {
         assert_eq!(Command::parse(r#"{"type":"trackTone","semitones":-2}"#), Some(Command::TrackTone { semitones: -2 }));
         assert_eq!(Command::parse(r#"{"type":"trackTone","semitones":7}"#), None);
         assert_eq!(Command::parse(r#"{"type":"trackTone","semitones":300}"#), None);
+        assert_eq!(Command::parse(r#"{"type":"trackVoice","voiceless":true}"#), Some(Command::TrackVoice { voiceless: true }));
+        assert_eq!(Command::parse(r#"{"type":"trackVoice"}"#), None);
         assert_eq!(Command::parse(r#"{"type":"goTo","n":0}"#), None);
         assert_eq!(Command::parse(r#"{"type":"goTo","n":-1}"#), None);
         assert_eq!(Command::parse(r#"{"type":"showSheet","id":"h1"}"#), Some(Command::ShowSheet { id: "h1".into() }));

@@ -270,6 +270,10 @@ export interface MediaSong {
   transpose?: number;
   /** Tonalidad de la pista (detectada y corregible); ausente = sin saber. */
   key?: MusicalKey | null;
+  /** La pista sin la voz, sacada de `audio`: dura lo mismo y sirven los mismos tiempos. */
+  instrumental?: AudioTrack | null;
+  /** Suena la pista sin voz en lugar de la original. */
+  voiceless?: boolean;
 }
 
 /** Tónica en semitonos desde Do (0 = Do, 7 = Sol) y si es menor. */
@@ -282,7 +286,7 @@ export type IssueCode =
   | "missingTitle" | "invalidReference" | "missingId" | "duplicateId" | "emptyOrder" | "unknownSection" | "trackWithoutAudio" | "invalidAudio"
   | "timeOutOfTrack" | "entriesOutOfOrder" | "sameEntryStart" | "unknownSlide" | "duplicateCue" | "slidesOutOfOrder" | "slideOutsideEntry"
   | "linesOutOfOrder" | "lineOutsideSlide" | "lineEndBeforeStart" | "linesOverlap" | "wordsOutOfOrder" | "wordOutsideLine"
-  | "unusedSection" | "emptySlide" | "untimedEntry" | "untimedSlide" | "extraLineCues" | "extraWordCues" | "shortSlide" | "invalidTranspose" | "invalidKey";
+  | "unusedSection" | "emptySlide" | "untimedEntry" | "untimedSlide" | "extraLineCues" | "extraWordCues" | "shortSlide" | "invalidTranspose" | "invalidKey" | "instrumentalMissing";
 
 export interface SongIssue {
   code: IssueCode;
@@ -339,6 +343,13 @@ export type CommandError =
   | { code: "whisperModelMissing" }
   | { code: "whisperDownload"; message: string }
   | { code: "transcribeFailed"; reason: string }
+  | { code: "separatorBusy" }
+  | { code: "separatorCanceled" }
+  | { code: "separatorUnavailable" }
+  | { code: "separatorMissing" }
+  | { code: "separatorDownload"; message: string }
+  | { code: "separateFailed"; reason: string }
+  | { code: "prepareFailed"; reason: string }
   | { code: "importFailed"; file: string; reason: string }
   | { code: "exportFailed"; reason: string }
   | { code: "copyFailed"; file: string; reason: string }
@@ -623,6 +634,18 @@ export interface Platform {
   /** Lo que se oye en la pista (mono, 16 kHz); `language` "" = que lo adivine; `prompt`: contexto (el título). */
   studioTranscribe(samples: Float32Array, language: string, prompt: string): Promise<WhisperSegment[]>;
   onWhisperProgress(handler: (progress: WhisperProgress) => void): Promise<() => void>;
+  /** Separador para quitar la voz de una pista (descarga aparte, D-029). */
+  studioSeparatorStatus(): Promise<SeparatorStatus>;
+  studioSeparatorDownload(): Promise<void>;
+  studioSeparatorCancel(): Promise<void>;
+  studioSeparatorRemove(): Promise<void>;
+  onSeparatorProgress(handler: (progress: SeparatorProgress) => void): Promise<() => void>;
+  /**
+   * Prepara una canción con su pista de una vez (D-029): lee la pista, separa la voz si hay separador (y guarda la
+   * versión sin voz si `voiceless`), y si `listen` oye la letra con Whisper. `language` "" = que lo adivine.
+   */
+  studioPrepare(path: string, name: string, language: string, prompt: string, listen: boolean, voiceless: boolean): Promise<PreparedTrack>;
+  onPrepareProgress(handler: (progress: PrepareProgress) => void): Promise<() => void>;
 
   // Planes del culto (features/plans)
   /** Con fecha primero, del más próximo al más lejano; después los que no tienen fecha. */
@@ -728,4 +751,34 @@ export interface WhisperSegment {
   text: string;
   /** Probabilidad de que no haya voz (0 a 1). */
   noSpeech: number;
+  /** Sus palabras con el tiempo de cada una (para sincronizar). */
+  words?: { text: string; startMs: number; endMs: number }[];
+}
+
+export interface SeparatorStatus {
+  /** Hay separador para este sistema (no lo hay para Mac con Intel). */
+  available: boolean;
+  ready: boolean;
+  busy: boolean;
+  /** Lo que ocupa la descarga, en bytes. */
+  size: number;
+}
+
+export type SeparatorProgress = { phase: "download"; done: number; total: number };
+
+export type PrepareProgress =
+  | { phase: "reading" }
+  | { phase: "separating"; done: number; total: number }
+  | { phase: "saving" }
+  | { phase: "listening"; percent: number };
+
+export interface PreparedTrack {
+  /** Lo que se oyó, con el tiempo de cada palabra (vacío si no se pidió oír). */
+  segments: WhisperSegment[];
+  /** La versión sin voz, si se pidió. */
+  instrumental: AudioTrack | null;
+  /** Se oyó la voz separada (más fiable que la mezcla). */
+  cleanVoice: boolean;
+  /** Dónde arranca a cantar la voz separada (ms). */
+  onsets: number[];
 }

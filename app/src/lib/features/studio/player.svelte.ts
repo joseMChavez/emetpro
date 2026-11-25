@@ -5,8 +5,44 @@
 import { platform } from "$lib/platform";
 import type { StretchNode } from "signalsmith-stretch";
 
-/** Fundido de cada salto, en segundos: lo justo para que no chasquee. */
+/** Fundido mínimo, en segundos: lo justo para que no chasquee (arrastrar la barra, cambiar la velocidad). */
 const FADE = 0.03;
+/**
+ * Saltos que pide el operador (otra diapositiva, otra sección, la onda): fundido cruzado como el de un músico que
+ * pasa de una parte a otra. Con 30 ms se oía como un corte y volver a empezar.
+ */
+const JUMP = 0.6;
+/** Saltos automáticos del orden propio o de repetir la sección: corto, para no correr el ritmo. */
+const JUMP_AUTO = 0.08;
+/** Con voz ↔ sin voz: el mismo punto de la misma canción, así que se funden sin notarse. */
+const SWITCH = 0.25;
+
+/** Cómo se salta: lo pide el operador, lo hace la app sola, o se arrastra la barra (muchos saltos seguidos). */
+export type SeekKind = "jump" | "auto" | "scrub";
+
+/** Curva de igual potencia (seno/coseno): al cruzar dos fundidos el volumen no se hunde a la mitad. */
+function powerCurve(from: number, to: number, steps = 64): Float32Array {
+  return Float32Array.from({ length: steps }, (_, i) => {
+    const x = i / (steps - 1);
+    return from + (to - from) * (to > from ? Math.sin((x * Math.PI) / 2) : 1 - Math.cos((x * Math.PI) / 2));
+  });
+}
+
+/**
+ * Lleva el volumen de un trozo a `to` en `seconds` desde ahora, con la curva de igual potencia. Si el navegador no
+ * acepta la curva (otra recién programada que se solapa, al saltar dos veces seguidas), lo hace en línea recta.
+ */
+export function fadeTo(param: AudioParam, to: number, at: number, seconds: number) {
+  const from = param.value;
+  param.cancelScheduledValues(at);
+  try {
+    param.setValueCurveAtTime(powerCurve(from, to), at, seconds);
+  } catch {
+    param.cancelScheduledValues(at);
+    param.setValueAtTime(from, at);
+    param.linearRampToValueAtTime(to, at + seconds);
+  }
+}
 /** Al reproducir y al pausar: la música entra y sale como con un músico, no de golpe. */
 const SOFT = 0.25;
 /** De fondo: el volumen mientras en pantalla hay otra cosa (la cita, un anuncio), como una banda que acompaña bajito. */
@@ -60,6 +96,11 @@ class Player {
   private latency = 0;
   private routed = false;
   private buffer: AudioBuffer | null = null;
+  /**
+   * La otra versión de la canción ya decodificada (con o sin voz), para cambiar en el mismo punto sin silencio.
+   * Solo una: cada pista decodificada ocupa unos 80 MB cada 4 minutos.
+   */
+  private spare = new Map<string, AudioBuffer>();
   private source: AudioBufferSourceNode | null = null;
   private gain: GainNode | null = null;
   /** Dónde empezó a sonar el trozo actual: segundo de la pista y momento del reloj del audio. */
@@ -82,9 +123,10 @@ class Player {
     this.buffer = null;
     this.offset = 0;
     this.positionMs = 0;
+    const kept = this.spare.get(path);
+    this.spare.clear();
     try {
-      const bytes = await platform.studioReadAudio(path);
-      const buffer = await this.context().decodeAudioData(bytes);
+      const buffer = kept ?? (await this.decode(path));
       // Mientras se decodificaba se pidió otra pista: esta ya no sirve.
       if (token !== this.loading) return null;
       this.buffer = buffer;
@@ -94,10 +136,62 @@ class Player {
     } catch (e) {
       if (token !== this.loading) return null;
       this.status = "error";
-      this.error = (e as { message?: string })?.message ?? String(e);
+      // Los errores de los comandos son objetos con su código (fileMissing…): se registran enteros.
+      const err = e as { message?: string; code?: string };
+      this.error = err?.message ?? (err?.code ? JSON.stringify(e) : String(e));
       platform.logError(`media studio: pista ${path}: ${this.error}`).catch(() => {});
       return null;
     }
+  }
+
+  private async decode(path: string): Promise<AudioBuffer> {
+    const bytes = await platform.studioReadAudio(path);
+    return this.context().decodeAudioData(bytes);
+  }
+
+  /** Decodifica de antemano la otra versión de la canción cargada (con o sin voz). */
+  async preload(path: string) {
+    if (this.path === path || this.spare.has(path)) return;
+    const token = this.loading;
+    try {
+      const buffer = await this.decode(path);
+      // Si mientras tanto se cargó otra canción, ya no sirve.
+      if (token !== this.loading) return;
+      this.spare.clear();
+      this.spare.set(path, buffer);
+    } catch (e) {
+      platform.logError(`media studio: pista ${path}: ${(e as { message?: string })?.message ?? e}`).catch(() => {});
+    }
+  }
+
+  /**
+   * Cambia a la otra versión de la misma canción (con o sin voz) en el mismo punto: si suena, con un fundido
+   * cruzado corto, sin silencio. Devuelve false si no se pudo (y sigue la que sonaba).
+   */
+  async switchTo(path: string): Promise<boolean> {
+    if (this.path === path) return true;
+    if (!this.buffer || !this.path || this.status !== "ready") return (await this.load(path)) !== null;
+    const token = this.loading;
+    let buffer = this.spare.get(path);
+    if (!buffer) {
+      try {
+        buffer = await this.decode(path);
+      } catch (e) {
+        platform.logError(`media studio: pista ${path}: ${(e as { message?: string })?.message ?? e}`).catch(() => {});
+        return false;
+      }
+      if (token !== this.loading) return false;
+    }
+    // La que sonaba queda de reserva para volver a ella al momento.
+    this.spare.clear();
+    this.spare.set(this.path, this.buffer);
+    const at = this.now() / 1000;
+    this.buffer = buffer;
+    this.path = path;
+    this.durationMs = Math.round(buffer.duration * 1000);
+    if (this.playing) this.startSource(Math.min(at, buffer.duration), SWITCH);
+    else this.offset = Math.min(at, buffer.duration);
+    return true;
   }
 
   private context(): AudioContext {
@@ -127,6 +221,7 @@ class Player {
     this.stopSource();
     this.playing = false;
     this.buffer = null;
+    this.spare.clear();
     this.path = null;
     this.status = "empty";
     this.positionMs = 0;
@@ -354,16 +449,16 @@ class Player {
    * Salta a ms. Si sonaba, sigue sonando desde ahí; si estaba en pausa, sigue en pausa (seek-preserve).
    * `automatic`: un salto de la propia canción (repetir, orden propio), no del operador.
    */
-  seek(ms: number, automatic = false) {
+  seek(ms: number, kind: SeekKind = "jump") {
     if (!this.buffer) return;
     this.offset = Math.max(0, Math.min(ms, this.durationMs)) / 1000;
     this.positionMs = this.offset * 1000;
     // Que el operador salte durante el fundido final es seguir cantando: vuelve el volumen.
-    if (this.finishing && !automatic) {
+    if (this.finishing && kind !== "auto") {
       this.finishing = false;
       this.ramp(this.level(), SOFT);
     }
-    if (this.playing) this.startSource(this.offset);
+    if (this.playing) this.startSource(this.offset, kind === "jump" ? JUMP : kind === "auto" ? JUMP_AUTO : FADE);
     this.emit();
   }
 
@@ -410,13 +505,16 @@ class Player {
     node.stop(ctx.currentTime + 0.1);
   }
 
-  /** Empieza un trozo nuevo en ese segundo, con fundido de entrada; el anterior se apaga con fundido de salida. */
-  private startSource(offset: number) {
+  /**
+   * Empieza un trozo nuevo en ese segundo; el anterior se apaga a la vez (fundido cruzado de `fade` segundos, con
+   * curvas de igual potencia).
+   */
+  private startSource(offset: number, fade = FADE) {
     const ctx = this.ctx!;
-    this.stopSource();
+    this.stopSource(fade);
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0, ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(1, ctx.currentTime + FADE);
+    gain.gain.value = 0;
+    fadeTo(gain.gain, 1, ctx.currentTime, fade);
     // Al bus, y de ahí al volumen general: así suenan los fundidos, «de fondo» y el cambio de tono.
     gain.connect(this.bus!);
     const source = ctx.createBufferSource();
@@ -447,9 +545,7 @@ class Player {
     this.gain = null;
     if (!source || !gain || !this.ctx) return;
     const at = this.ctx.currentTime;
-    gain.gain.cancelScheduledValues(at);
-    gain.gain.setValueAtTime(gain.gain.value, at);
-    gain.gain.linearRampToValueAtTime(0, at + fade);
+    fadeTo(gain.gain, 0, at, fade);
     try {
       source.stop(at + fade);
     } catch {

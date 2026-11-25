@@ -249,6 +249,7 @@ function studioOf(): RemoteStudio | null {
     loop: studioOnScreen.loop,
     transpose: studioPlayer.transpose,
     key: song.key ?? null,
+    voiceless: song.instrumental ? studioOnScreen.voiceless : null,
     sections: sectionsOnScreen().flatMap((s) => {
       const section = song.sections.find((x) => x.id === s.id);
       return section ? [{ id: s.id, name: sectionName(song, section), current: s.current }] : [];

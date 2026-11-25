@@ -45,6 +45,17 @@ pub enum CommandError {
     WhisperModelMissing,
     WhisperDownload { message: String },
     TranscribeFailed { reason: String },
+    /// Ya se está descargando el separador o quitando la voz de otra pista.
+    SeparatorBusy,
+    SeparatorCanceled,
+    /// No hay separador para este sistema (Mac con Intel, procesadores ARM en Linux…).
+    SeparatorUnavailable,
+    /// Hace falta descargar antes el separador.
+    SeparatorMissing,
+    SeparatorDownload { message: String },
+    SeparateFailed { reason: String },
+    /// No se pudo leer la pista para prepararla.
+    PrepareFailed { reason: String },
     /// No se pudo leer o escribir la base de datos local.
     Storage { message: String },
     Internal { message: String },
