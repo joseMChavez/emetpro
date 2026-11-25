@@ -21,11 +21,19 @@
 
   let strip = $state<HTMLOListElement>();
 
-  // Mantiene visible la posición actual al avanzar.
+  // Mantiene visible la posición actual al avanzar, desplazando solo la tira de lado. scrollIntoView movía
+  // también la columna (o la página, en ventana estrecha) hacia abajo con cada clic.
   $effect(() => {
-    if (content.kind !== "text" && content.kind !== "scripture") return;
+    if (content.kind !== "text") return;
     void content.index;
-    strip?.querySelector<HTMLElement>("[aria-current='true']")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const current = strip?.querySelector<HTMLElement>("[aria-current='true']");
+    if (!strip || !current) return;
+    const box = strip.getBoundingClientRect();
+    const rect = current.getBoundingClientRect();
+    const left = rect.left - box.left + strip.scrollLeft;
+    const right = left + rect.width;
+    if (left < strip.scrollLeft) strip.scrollTo({ left: left - 8, behavior: "smooth" });
+    else if (right > strip.scrollLeft + strip.clientWidth) strip.scrollTo({ left: right - strip.clientWidth + 8, behavior: "smooth" });
   });
 </script>
 

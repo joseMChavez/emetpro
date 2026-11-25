@@ -37,9 +37,10 @@ pub fn plugin() -> TauriPlugin<Wry> {
         .build()
 }
 
-/// Conexión con OBS; None si no hay. Mutex de tokio: se mantiene durante las peticiones.
+/// Conexión con OBS; None si no hay. RwLock de tokio: las peticiones comparten la conexión a la vez (obws las
+/// distingue por id), así la vista previa no espera a la consulta de estado; conectar y desconectar la toman entera.
 #[derive(Default)]
-pub struct ObsState(pub tauri::async_runtime::Mutex<Option<obws::Client>>);
+pub struct ObsState(pub tauri::async_runtime::RwLock<Option<obws::Client>>);
 
 impl From<client::ObsError> for CommandError {
     fn from(e: client::ObsError) -> Self {
