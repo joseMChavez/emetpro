@@ -46,6 +46,8 @@ export interface RemoteItem {
 
 /** El plan abierto en la consola, para tenerlo a un toque (D-019). */
 export interface RemotePlan {
+  /** Para recordar en el teléfono qué secciones de este plan están plegadas. */
+  id: string;
   name: string;
   items: RemotePlanItem[];
 }

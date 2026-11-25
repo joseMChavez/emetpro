@@ -141,6 +141,7 @@ function planOf(): RemotePlan | null {
   if (!plan) return null;
   const shown = session.shown[plan.id] ?? [];
   return {
+    id: plan.id,
     name: plan.name,
     items: plan.items.map((item) =>
       item.kind === "section"

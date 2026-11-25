@@ -604,7 +604,7 @@
 
   <!-- Las dos vistas siguen montadas: cambiar de una a otra no pierde búsquedas ni textos a medias. -->
   <main class="stream-area" hidden={view !== "stream"}>
-    <StreamWorkspace projectionLive={output.content} onerror={(m) => (error = m)} />
+    <StreamWorkspace projectionLive={output.content} active={view === "stream"} onerror={(m) => (error = m)} />
   </main>
 
   {#if view === "settings"}
@@ -666,9 +666,11 @@
         </button>
       </div>
       <div class="card-body stack" role="tabpanel" id="pane-prepared" aria-labelledby="tab-prepared" hidden={stageTab !== "prepared"}>
-        <div class="screen preview">
-          <OutputView content={prepared} style={output.style} preview animated={stageTab === "prepared" && !expanded} playing={stageTab === "prepared" && !expanded} marking={markTool.on} onmark={(part, from, to) => markWords("prepared", part, from, to)} onunplayable={(path) => (unplayable = path)} />
-          <span class="screen-tag">{t("stage.previewTag")}</span>
+        <div class="screen-fit">
+          <div class="screen preview">
+            <OutputView content={prepared} style={output.style} preview animated={stageTab === "prepared" && !expanded} playing={stageTab === "prepared" && !expanded} marking={markTool.on} onmark={(part, from, to) => markWords("prepared", part, from, to)} onunplayable={(path) => (unplayable = path)} />
+            <span class="screen-tag">{t("stage.previewTag")}</span>
+          </div>
         </div>
         <MarkTools content={prepared} saved={fromPlan(prepared)} onclear={() => clearWords("prepared")} />
         {@render videoFix(prepared)}
@@ -678,20 +680,22 @@
         {#if preparedPosition}
           <div class="nav-row">
             <button class="btn" onclick={() => goPrepared(preparedPosition!.n - 1)} disabled={preparedPosition.n <= 1}>◀</button>
-            <span class="position">{t(preparedPosition.label, { n: preparedPosition.n, total: preparedPosition.total ?? "…" })}</span>
+            <span class="position" title={t("prepared.keysHint")}>{t(preparedPosition.label, { n: preparedPosition.n, total: preparedPosition.total ?? "…" })}</span>
             <button class="btn" onclick={() => goPrepared(preparedPosition!.n + 1)} disabled={preparedPosition.total !== null && preparedPosition.n >= preparedPosition.total}>▶</button>
           </div>
         {/if}
         <SlideStrip content={prepared} style={output.style} tone="prepared" onselect={goPrepared} />
-        {#if preparedPosition}<p class="muted small">{t("prepared.keysHint")}</p>{/if}
+        {#if preparedPosition}<p class="muted small keys-hint">{t("prepared.keysHint")}</p>{/if}
         <button class="btn primary big send" onclick={() => requestSend(prepared)} disabled={busy || prepared.kind === "empty"}>
           {t("prepared.send")} →
         </button>
       </div>
       <div class="card-body stack" role="tabpanel" id="pane-live" aria-labelledby="tab-live" hidden={stageTab !== "live"}>
-        <div class="screen live">
-          <OutputView content={output.content} style={output.style} preview animated={stageTab === "live" && !expanded} playing={stageTab === "live" && !expanded && output.open} follow={videoTime} word={wordOnScreen(output.content)} marking={markTool.on} onmark={(part, from, to) => markWords("live", part, from, to)} onunplayable={(path) => (unplayable = path)} />
-          <span class="screen-tag live">{output.open ? t("live.badge") : t("live.closedBadge")}</span>
+        <div class="screen-fit">
+          <div class="screen live">
+            <OutputView content={output.content} style={output.style} preview animated={stageTab === "live" && !expanded} playing={stageTab === "live" && !expanded && output.open} follow={videoTime} word={wordOnScreen(output.content)} marking={markTool.on} onmark={(part, from, to) => markWords("live", part, from, to)} onunplayable={(path) => (unplayable = path)} />
+            <span class="screen-tag live">{output.open ? t("live.badge") : t("live.closedBadge")}</span>
+          </div>
         </div>
         <MarkTools content={output.content} saved={fromPlan(output.content)} onclear={() => clearWords("live")} />
         {@render videoFix(output.content)}
@@ -701,11 +705,11 @@
         {#if livePosition}
           <div class="nav-row">
             <button class="btn big" onclick={() => goLive(livePosition!.n - 1)} disabled={busy || livePosition.n <= 1}>{t("live.previous")}</button>
-            <span class="position">{t(livePosition.label, { n: livePosition.n, total: livePosition.total ?? "…" })}</span>
+            <span class="position" title={t("live.keysHint")}>{t(livePosition.label, { n: livePosition.n, total: livePosition.total ?? "…" })}</span>
             <button class="btn big" onclick={() => goLive(livePosition!.n + 1)} disabled={busy || (livePosition.total !== null && livePosition.n >= livePosition.total)}>{t("live.next")}</button>
           </div>
           <SlideStrip content={output.content} style={output.style} tone="live" disabled={busy} onselect={goLive} />
-          <p class="muted small">{t("live.keysHint")}</p>
+          <p class="muted small keys-hint">{t("live.keysHint")}</p>
         {/if}
 
         <div class="quick">
@@ -917,6 +921,19 @@
   .stage-what { max-width: 100%; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .live-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
   .live-dot.on { background: var(--live); box-shadow: 0 0 0 3px rgb(239 107 99 / 0.25); }
+  /* La pantalla ocupa el alto que dejan libre los controles, sin pasar de 16:9: en una ventana baja se
+     achica y «Enviar a pantalla», la tira de miniaturas y los botones siguen a la vista sin desplazar. */
+  .screen-fit {
+    flex: 0 1 auto;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    min-height: 140px;
+    container-type: size;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+  }
+  .screen-fit > .screen { width: min(100cqw, calc(100cqh * 16 / 9)); }
   /* La vista previa no se parece a la pantalla: borde punteado y su etiqueta. */
   .screen.preview { border-style: dashed; border-color: var(--accent); }
   .screen-tag {
@@ -997,7 +1014,11 @@
   .style summary { cursor: pointer; font-weight: 650; padding: 4px 0 10px; }
   .style :global(.btn.small) { margin-top: 10px; font-size: 13px; min-height: 32px; }
 
-  /* Ventana baja: el menú lateral se aprieta para que quepa entero (y si no, se desplaza). */
+  /* Ventana baja: el menú lateral se aprieta para que quepa entero (y si no, se desplaza). La leyenda de las
+     flechas pasa a ser la ayuda de la posición, y ese sitio es para la pantalla. */
+  @media (max-height: 820px) {
+    .keys-hint { display: none; }
+  }
   @media (max-height: 760px) {
     .sidebar { padding: 8px; gap: 2px; }
     .nav-item { padding: 6px 4px; gap: 2px; }
@@ -1015,7 +1036,9 @@
     }
     .sources { position: static; max-height: none; }
     .card-body { overflow: visible; }
-    .stage .screen { max-width: 420px; align-self: center; }
+    /* Aquí la página entera se desplaza: no hay un alto libre que repartir. */
+    .screen-fit { flex: none; min-height: 0; aspect-ratio: auto; container-type: normal; }
+    .screen-fit > .screen { width: 100%; max-width: 420px; }
     .body { flex-direction: column; }
     /* El menú en una fila que se desplaza de lado si no cabe (centrado si cabe, sin cortar el primero). */
     .sidebar { flex-direction: row; padding: 6px; overflow-x: auto; overflow-y: hidden; border-right: 0; border-bottom: 1px solid var(--border); }

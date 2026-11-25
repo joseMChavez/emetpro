@@ -3,7 +3,7 @@
   // Sin plan abierto se ven todos los planes; con uno abierto, se edita y se usa en el mismo sitio:
   // un clic prepara el elemento, doble clic lo envía a pantalla, «Siguiente» prepara el que sigue.
   import { untrack } from "svelte";
-  import { t, i18n } from "$lib/i18n/index.svelte";
+  import { t, tCount, i18n } from "$lib/i18n/index.svelte";
   import { toMessage, type Message } from "$lib/core/messages";
   import { library } from "$lib/features/songs/library.svelte";
   import { bibles, currentBibles, visibleBibles } from "$lib/features/bible/bibles.svelte";
@@ -11,6 +11,8 @@
   import { parseList, referenceLabel, scriptureContent, type ScriptureItem } from "./scripture";
   import { baseName, contentOf, detail, firstLine, icon, markShown, problem, session, textSlides, title } from "./items.svelte";
   import RichEditor from "$lib/features/richtext/RichEditor.svelte";
+  import { hiddenAt, sectionOf, summaries } from "./sections";
+  import { folded, setFolded, toggleFold, unfold } from "./fold.svelte";
   import PlanExport from "./PlanExport.svelte";
   import PlanImport from "./PlanImport.svelte";
   import type { PlanImportPreview } from "$lib/platform";
@@ -91,6 +93,36 @@
   let upcoming = $derived(plans.all.filter((p) => p.date === null || p.date >= now));
   let past = $derived(plans.all.filter((p) => p.date !== null && p.date < now).reverse());
   let presentable = $derived(plan ? plan.items.filter((i) => i.kind !== "section") : []);
+
+  // Secciones como acordeón: plegadas, solo se ve su cabecera con un resumen.
+  let foldedNow = $derived(plan ? folded(plan.id) : new Set<string>());
+  let hidden = $derived(plan ? hiddenAt(plan.items, foldedNow) : []);
+  let sectionInfo = $derived.by(() => {
+    if (!plan) return new Map();
+    const shown = session.shown[plan.id] ?? [];
+    return summaries(plan.items, (id) => shown.includes(id), session.current?.id ?? null);
+  });
+  let sectionIds = $derived(plan ? plan.items.filter((i) => i.kind === "section").map((i) => i.id) : []);
+  let allFolded = $derived(sectionIds.length > 0 && sectionIds.every((id) => foldedNow.has(id)));
+
+  function foldAll() {
+    if (plan) setFolded(plan.id, allFolded ? [] : sectionIds);
+  }
+
+  // Lo que se añade (canciones, citas, medios, importado…) va a la última sección: si estaba plegada, se abre
+  // para que se vea lo que acaba de entrar.
+  let knownPlan: string | null = null;
+  let knownIds = new Set<string>();
+  $effect(() => {
+    const current = plan;
+    if (!current) return;
+    const ids = current.items.map((i) => i.id);
+    untrack(() => {
+      if (knownPlan === current.id) for (const id of ids) if (!knownIds.has(id)) unfold(current.id, sectionOf(current.items, id));
+      knownPlan = current.id;
+      knownIds = new Set(ids);
+    });
+  });
   let songMatches = $derived.by(() => {
     const q = songFilter.trim().toLocaleLowerCase();
     const songs = q ? library.songs.filter((s) => [s.title, s.singer, s.body].some((f) => f.toLocaleLowerCase().includes(q))) : library.songs;
@@ -113,6 +145,8 @@
       }
       if (!content || content.kind === "empty") return;
       session.current = { id: item.id, content };
+      // «Siguiente» puede entrar en una sección plegada: se abre para que se vea qué se preparó.
+      if (plan) unfold(plan.id, sectionOf(plan.items, item.id));
       if (send) onsend(content);
       else onprepare(content);
     } catch (e) {
@@ -161,6 +195,8 @@
     if (j < 0 || j >= items.length) return;
     [items[i], items[j]] = [items[j], items[i]];
     setItems(items);
+    // Al cruzar la cabecera de una sección plegada, lo movido no desaparece: se abre donde cae.
+    unfold(plan.id, sectionOf(items, items[j].id));
   }
 
   function removeItem(id: string) {
@@ -489,13 +525,20 @@
     {#if plan.items.length === 0}
       <p class="muted">{t("plans.emptyPlan")}</p>
     {:else}
-      <p class="muted small">{t("plans.hint")}</p>
+      <div class="list-head">
+        <p class="muted small">{t("plans.hint")}</p>
+        {#if sectionIds.length > 1}
+          <button class="btn ghost small-btn" onclick={foldAll}>{allFolded ? t("plans.unfoldAll") : t("plans.foldAll")}</button>
+        {/if}
+      </div>
       <ol class="items">
         {#each plan.items as item, i (item.id)}
           {@const issue = problem(item)}
           {@const done = (session.shown[plan.id] ?? []).includes(item.id)}
           {#if item.kind === "section"}
-            <li class="section">
+            {@const isFolded = foldedNow.has(item.id)}
+            {@const info = sectionInfo.get(item.id)}
+            <li class="section" class:folded={isFolded}>
               {#if editingSection === item.id}
                 <!-- svelte-ignore a11y_autofocus -->
                 <input
@@ -511,26 +554,44 @@
                   aria-label={t("plans.sectionName")}
                 />
               {:else}
-                <button class="section-title" onclick={() => (editingSection = item.id)} title={t("plans.renameSection")}>{item.title}</button>
+                <button
+                  class="section-title"
+                  onclick={() => toggleFold(plan.id, item.id)}
+                  aria-expanded={!isFolded}
+                  title={t(isFolded ? "plans.unfoldSection" : "plans.foldSection", { section: item.title })}
+                >
+                  <span class="chev" aria-hidden="true"></span>
+                  <span class="section-name">{item.title}</span>
+                  {#if isFolded && info}
+                    <span class="section-sum">
+                      {tCount("plans.sectionItems", info.count)}{#if info.shown > 0}<span class="sum-shown" title={t("plans.sectionShown", { shown: info.shown, count: info.count })}>✓ {info.shown}</span>{/if}
+                    </span>
+                    {#if info.current}<span class="section-dot" title={t("plans.sectionCurrent")} aria-label={t("plans.sectionCurrent")}></span>{/if}
+                  {/if}
+                </button>
               {/if}
-              <select
-                class="section-anim"
-                class:set={item.animate != null}
-                value={toChoice(item.animate)}
-                onchange={(e) => setSectionAnimate(item.id, e.currentTarget.value)}
-                aria-label="{t('anim.planLabel')} · {item.title}"
-                title={t("anim.planLabel")}
-              >
-                <option value="inherit">✨ {t("anim.cascade.plan")}</option>
-                <option value="on">✨ {t("anim.cascade.on")}</option>
-                <option value="off">⏸ {t("anim.cascade.off")}</option>
-              </select>
+              <!-- Plegada, su sitio es para el resumen: la animación se cambia con la sección abierta. -->
+              {#if !isFolded}
+                <select
+                  class="section-anim"
+                  class:set={item.animate != null}
+                  value={toChoice(item.animate)}
+                  onchange={(e) => setSectionAnimate(item.id, e.currentTarget.value)}
+                  aria-label="{t('anim.planLabel')} · {item.title}"
+                  title={t("anim.planLabel")}
+                >
+                  <option value="inherit">✨ {t("anim.cascade.plan")}</option>
+                  <option value="on">✨ {t("anim.cascade.on")}</option>
+                  <option value="off">⏸ {t("anim.cascade.off")}</option>
+                </select>
+              {/if}
+              <button class="icon-btn" onclick={() => (editingSection = item.id)} aria-label={t("plans.renameSection")} title={t("plans.renameSection")}>✎</button>
               <button class="icon-btn" onclick={() => exportPlan(item.id, item.title)} aria-label={t("planfile.exportSection", { section: item.title })} title={t("planfile.exportSection", { section: item.title })}>⤓</button>
               <button class="icon-btn" onclick={() => move(i, -1)} disabled={i === 0} aria-label={t("songs.moveUp")}>▲</button>
               <button class="icon-btn" onclick={() => move(i, 1)} disabled={i === plan.items.length - 1} aria-label={t("songs.moveDown")}>▼</button>
               <button class="icon-btn remove" onclick={() => removeItem(item.id)} aria-label={t("plans.remove", { name: item.title })}>✕</button>
             </li>
-          {:else}
+          {:else if !hidden[i]}
             <li class:chosen={session.current?.id === item.id} class:broken={issue !== null}>
               <button
                 class="item"
@@ -777,21 +838,48 @@
   li.broken .sub { color: var(--live); }
   li.section { margin-top: 8px; border-bottom: 1px solid var(--border); border-radius: 0; }
   li.section:hover { background: transparent; }
+  .list-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .list-head p { margin: 0; }
+  .list-head .btn { flex: none; }
   .section-title {
     flex: 1;
     min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
     padding: 6px 4px;
     font: inherit;
     font-size: 13px;
     font-weight: 700;
     letter-spacing: 0.04em;
-    text-transform: uppercase;
     text-align: left;
     color: var(--muted);
     background: transparent;
     border: 0;
-    cursor: text;
+    border-radius: 6px;
+    cursor: pointer;
   }
+  .section-title:hover { color: var(--text); background: var(--surface-2); }
+  .section-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* Triángulo que gira: abajo abierta, a la derecha plegada. */
+  .chev {
+    flex: none;
+    width: 0;
+    height: 0;
+    margin: 0 2px 0 4px;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid currentColor;
+    transition: transform 0.15s ease;
+  }
+  .folded .chev { transform: rotate(-90deg); }
+  .section-name { flex: 0 1 auto; min-width: 3em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: uppercase; }
+  .section-sum { flex: 0 0 auto; font-size: 12px; font-weight: 500; letter-spacing: 0; color: var(--muted); }
+  .sum-shown { margin-left: 8px; color: var(--accent); font-weight: 650; }
+  .section-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  li.section.folded { background: var(--surface-2); border-radius: 8px; border-bottom-color: transparent; }
+  li.section.folded:hover { background: var(--surface-2); }
   .section-input { flex: 1; min-width: 0; }
   .anim-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .field.compact { width: auto; min-height: 32px; padding: 2px 8px; }

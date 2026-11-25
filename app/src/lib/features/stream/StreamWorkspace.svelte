@@ -8,9 +8,21 @@
   import { platform, type ObsCamera, type OutputContent } from "$lib/platform";
   import { setSetting, settings } from "$lib/core/settings.svelte";
 
-  let { projectionLive, onerror }: { projectionLive: OutputContent; onerror: (message: Message) => void } = $props();
+  let {
+    projectionLive,
+    active,
+    onerror,
+  }: {
+    projectionLive: OutputContent;
+    /** La vista está a la vista: solo entonces se piden imágenes a OBS. */
+    active: boolean;
+    onerror: (message: Message) => void;
+  } = $props();
 
-  const PREVIEW_MS = 1000;
+  /** Una imagen cada 100 ms como mucho (~10 por segundo): con una por segundo parecía que la emisión iba a tirones.
+   *  Se pide la siguiente cuando llega la anterior, así un OBS ocupado recibe menos peticiones, no una cola. */
+  const PREVIEW_FRAME_MS = 100;
+  const PREVIEW_IDLE_MS = 500;
   const TEXT_SOURCE = "EmetPro · Texto";
   const STOP_CONFIRM_MS = 4000;
 
@@ -137,12 +149,34 @@
 
   onMount(() => {
     if (!obs.connected) detect().catch(() => {});
-    // La vista previa solo se pide mientras esta vista está abierta.
-    const timer = setInterval(async () => {
-      if (!obs.connected) return;
-      preview = await platform.obsPreview().catch(() => null);
-    }, PREVIEW_MS);
-    return () => clearInterval(timer);
+  });
+
+  // La vista previa solo se pide mientras esta vista está abierta y la ventana se ve.
+  $effect(() => {
+    if (!active || !obs.connected) return;
+    let stopped = false;
+    (async () => {
+      while (!stopped) {
+        const started = performance.now();
+        if (!document.hidden) {
+          const shot = await platform.obsPreview().catch(() => null);
+          if (stopped) break;
+          if (shot) {
+            // Se decodifica antes de cambiarla: sin parpadeo entre una imagen y la siguiente.
+            const img = new Image();
+            img.src = shot;
+            await img.decode().catch(() => {});
+            if (stopped) break;
+          }
+          preview = shot;
+        }
+        const wait = document.hidden ? PREVIEW_IDLE_MS : Math.max(0, PREVIEW_FRAME_MS - (performance.now() - started));
+        await new Promise((r) => setTimeout(r, wait));
+      }
+    })();
+    return () => {
+      stopped = true;
+    };
   });
 </script>
 
@@ -194,6 +228,7 @@
               <p class="empty muted">{t("stream.previewEmpty")}</p>
             {/if}
           </div>
+          <p class="muted small preview-note">{t("stream.previewNote")}</p>
 
           <h3>{t("stream.layouts")}</h3>
           {#if appScenes.length > 0}
@@ -327,6 +362,7 @@
   h3 { font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
   .screen img { width: 100%; height: 100%; object-fit: contain; display: block; }
   .empty { position: absolute; inset: 0; display: grid; place-items: center; color: #9aa0a6; }
+  .preview-note { margin: -4px 0 0; }
   .group { margin-top: 2px; }
   .optional { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding-top: 6px; border-top: 1px dashed var(--border); }
   .layouts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }

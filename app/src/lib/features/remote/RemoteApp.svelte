@@ -9,6 +9,8 @@
   import type { Verse } from "$lib/platform";
   import type { RemoteCommand, RemoteStatus, ServerMessage } from "./protocol";
   import BoardPad from "./BoardPad.svelte";
+  import { hiddenAt, sectionOf, summaries } from "$lib/features/plans/sections";
+  import { folded, setFolded, toggleFold, unfold } from "$lib/features/plans/fold.svelte";
   import { applyMessage, applyOp, emptyBoard, type Board, type BoardOp } from "./board";
 
   const KEY_STORAGE = "emetpro-remote-key";
@@ -352,6 +354,25 @@
     });
   });
 
+  // Plan con secciones plegables, como en la consola; lo plegado se recuerda en este teléfono.
+  let planFolded = $derived(status?.plan ? folded(status.plan.id) : new Set<string>());
+  let planHidden = $derived(status?.plan ? hiddenAt(status.plan.items, planFolded) : []);
+  let planSections = $derived.by(() => {
+    const items = status?.plan?.items ?? [];
+    const current = items.find((i) => i.kind === "item" && i.current)?.id ?? null;
+    return summaries(items, (id) => items.some((i) => i.id === id && i.kind === "item" && i.shown), current);
+  });
+  let planSectionIds = $derived((status?.plan?.items ?? []).filter((i) => i.kind === "section").map((i) => i.id));
+  let planAllFolded = $derived(planSectionIds.length > 0 && planSectionIds.every((id) => planFolded.has(id)));
+  let planCurrent = $derived(status?.plan?.items.find((i) => i.kind === "item" && i.current)?.id ?? null);
+
+  // Si la consola avanza («Siguiente») a una sección plegada aquí, se abre para seguirla.
+  $effect(() => {
+    const id = planCurrent;
+    const plan = untrack(() => status?.plan);
+    if (id && plan) untrack(() => unfold(plan.id, sectionOf(plan.items, id)));
+  });
+
   /** La referencia que está en pantalla, para resaltar su versículo en la lista. */
   let liveReference = $derived(status?.live.kind === "scripture" ? status.live.reference : null);
 
@@ -550,12 +571,30 @@
     <div class="side">
     {#if status?.plan && status.plan.items.length > 0}
       <section class="card">
-        <h2>{t("remote.plan", { name: status.plan.name })}</h2>
+        <div class="plan-head">
+          <h2>{t("remote.plan", { name: status.plan.name })}</h2>
+          {#if planSectionIds.length > 1}
+            <button class="btn fold-all" onclick={() => setFolded(status!.plan!.id, planAllFolded ? [] : planSectionIds)}>
+              {planAllFolded ? t("plans.unfoldAll") : t("plans.foldAll")}
+            </button>
+          {/if}
+        </div>
         <div class="items">
-          {#each status.plan.items as item (item.id)}
+          {#each status.plan.items as item, i (item.id)}
             {#if item.kind === "section"}
-              <h3 class="plan-section">{item.title}</h3>
-            {:else}
+              {@const isFolded = planFolded.has(item.id)}
+              {@const info = planSections.get(item.id)}
+              <h3 class="plan-section">
+                <button class="section-toggle" class:folded={isFolded} aria-expanded={!isFolded} onclick={() => toggleFold(status!.plan!.id, item.id)}>
+                  <span class="chev" aria-hidden="true"></span>
+                  <span class="section-name">{item.title}</span>
+                  {#if isFolded && info}
+                    <span class="section-sum">{tCount("plans.sectionItems", info.count)}{#if info.shown > 0}<span class="sum-shown">✓ {info.shown}</span>{/if}</span>
+                    {#if info.current}<span class="section-dot" aria-label={t("plans.sectionCurrent")}></span>{/if}
+                  {/if}
+                </button>
+              </h3>
+            {:else if !planHidden[i]}
               <button
                 class="btn item plan-item"
                 class:current={item.current}
@@ -765,7 +804,43 @@
   .items { display: flex; flex-direction: column; gap: 6px; }
   .item { justify-content: flex-start; gap: 8px; min-height: 52px; text-align: left; }
   .item .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .plan-section { margin: 8px 0 0; font-size: 12px; font-weight: 750; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+  .plan-section { margin: 6px 0 0; }
+  .plan-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .plan-head h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fold-all { flex: none; min-height: 40px; padding: 0 12px; font-size: 14px; }
+  .section-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 44px;
+    padding: 4px 8px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 750;
+    letter-spacing: 0.05em;
+    text-align: left;
+    color: var(--muted);
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .section-toggle.folded { border-bottom-color: transparent; border-radius: 8px; background: var(--surface-2); }
+  .chev {
+    flex: none;
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid currentColor;
+    transition: transform 0.15s ease;
+  }
+  .folded .chev { transform: rotate(-90deg); }
+  .section-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: uppercase; }
+  .section-sum { flex: none; font-weight: 600; letter-spacing: 0; }
+  .sum-shown { margin-left: 8px; color: var(--accent); }
+  .section-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   .plan-item .label { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .plan-item .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
   .plan-item .sub.bad { color: var(--live); }
