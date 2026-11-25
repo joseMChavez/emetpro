@@ -314,7 +314,7 @@ function onTime(ms: number) {
     // Terminó sola (o con «Terminar»): ya no hay nada de fondo.
     if (!player.playing && (endingBehind || ms >= player.durationMs - 50)) clearBehind();
     const range = behind.range;
-    if (player.playing && behind.loop && range && ms >= range.end - 60 && ms < range.end + 1000) player.seek(range.start, true);
+    if (player.playing && behind.loop && range && ms >= range.end - 60 && ms < range.end + 1000) player.seek(range.start, "auto");
     return;
   }
   sendTime(ms);
@@ -329,5 +329,5 @@ function onTime(ms: number) {
   if (next.kind === "stay") return;
   display(next.index);
   // Orden propio o repetir: la siguiente suena en otra parte de la grabación.
-  if (next.seek !== undefined) player.seek(next.seek, true);
+  if (next.seek !== undefined) player.seek(next.seek, "auto");
 }

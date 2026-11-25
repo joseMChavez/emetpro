@@ -70,7 +70,7 @@
             step="100"
             value={player.positionMs}
             aria-label={t("studio.position")}
-            onchange={(e) => player.seek(Number(e.currentTarget.value))}
+            onchange={(e) => player.seek(Number(e.currentTarget.value), "scrub")}
           />
         {/if}
       </div>
