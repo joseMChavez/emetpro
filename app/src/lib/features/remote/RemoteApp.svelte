@@ -9,6 +9,7 @@
   import type { Verse } from "$lib/platform";
   import type { RemoteCommand, RemoteStatus, ServerMessage } from "./protocol";
   import BoardPad from "./BoardPad.svelte";
+  import { keyWithTone } from "$lib/features/studio/keylabel";
   import { hiddenAt, sectionOf, summaries } from "$lib/features/plans/sections";
   import { folded, setFolded, toggleFold, unfold } from "$lib/features/plans/fold.svelte";
   import { applyMessage, applyOp, emptyBoard, type Board, type BoardOp } from "./board";
@@ -552,6 +553,7 @@
                   <strong>{tone === 0 ? t("studio.tone.original") : `${tone > 0 ? "+" : "−"}${tCount("studio.tone.semitones", Math.abs(tone))}`}</strong>
                   <button class="btn" disabled={connection !== "open" || tone >= 6} onclick={() => command({ type: "trackTone", semitones: tone + 1 })} aria-label={t("studio.tone.up")}>+</button>
                 </div>
+                {#if studio.key}<p class="studio-key">♪ {keyWithTone(studio.key, tone)}</p>{/if}
               {/if}
             {/if}
             <div class="studio-sections" role="group" aria-label={t("studio.sections")}>
@@ -1005,6 +1007,7 @@
   .studio-behind { margin: 0; font-weight: 700; color: var(--live); }
   .studio-row .play { flex: 1; min-width: 140px; min-height: 56px; font-size: 18px; }
   .studio-row .btn[aria-pressed="true"] { border-color: var(--live); background: var(--live-soft); }
+  .studio-key { margin: 0; font-weight: 650; color: var(--accent); }
   .studio-sections { display: flex; flex-wrap: wrap; gap: 6px; }
   .studio-sections .section { min-height: 48px; padding: 0 14px; gap: 6px; }
   .studio-sections .section[aria-pressed="true"] { border-color: var(--live); background: var(--live-soft); font-weight: 750; }

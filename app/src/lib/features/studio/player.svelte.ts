@@ -289,6 +289,37 @@ class Player {
    * el editor. El medio y no el pico: en la música grabada hoy el pico toca el máximo casi siempre y la onda sería
    * un bloque; el medio deja ver dónde baja y sube (los cambios de sección). null si no hay pista cargada.
    */
+  /** La pista en mono a unas `rate` muestras por segundo, para analizarla (la tonalidad), con la frecuencia que
+   *  quedó de verdad (el camino de reserva no da exactamente `rate`: 48 kHz / 4 = 12 kHz). null si no hay pista. */
+  async mono(rate: number): Promise<{ samples: Float32Array; rate: number } | null> {
+    const buffer = this.buffer;
+    if (!buffer) return null;
+    try {
+      // El navegador remuestrea con su filtro (sin los armónicos falsos de quitar muestras sin más).
+      const offline = new OfflineAudioContext(1, Math.ceil(buffer.duration * rate), rate);
+      const source = offline.createBufferSource();
+      source.buffer = buffer;
+      source.connect(offline.destination);
+      source.start();
+      const out = (await offline.startRendering()).getChannelData(0);
+      if (out.some((v) => v !== 0)) return { samples: out, rate };
+    } catch {
+      // Abajo, a mano.
+    }
+    // Si el render no sirvió (algún WebKit devuelve silencio): media de cada grupo de muestras.
+    const step = Math.max(1, Math.round(buffer.sampleRate / rate));
+    const out = new Float32Array(Math.floor(buffer.length / step));
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+      const data = buffer.getChannelData(c);
+      for (let i = 0; i < out.length; i++) {
+        let sum = 0;
+        for (let j = 0; j < step; j++) sum += data[i * step + j];
+        out[i] += sum / step / buffer.numberOfChannels;
+      }
+    }
+    return { samples: out, rate: buffer.sampleRate / step };
+  }
+
   peaks(bins: number): Float32Array | null {
     const buffer = this.buffer;
     if (!buffer || bins < 1) return null;

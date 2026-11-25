@@ -3,7 +3,7 @@
   import { untrack } from "svelte";
   import { t, tCount } from "$lib/i18n/index.svelte";
   import { toMessage, type Message } from "$lib/core/messages";
-  import { platform, type MediaSong, type OutputContent, type SectionKind, type SongIssue } from "$lib/platform";
+  import { platform, type MediaSong, type MusicalKey, type OutputContent, type SectionKind, type SongIssue } from "$lib/platform";
   import { saveStudioSong, songCredit } from "./library.svelte";
   import { onScreen } from "./live.svelte";
   import { player } from "./player.svelte";
@@ -11,6 +11,8 @@
   import BackgroundField from "./BackgroundField.svelte";
   import Waveform, { type Mark } from "./Waveform.svelte";
   import ToneControl from "./ToneControl.svelte";
+  import { ANALYSIS_RATE, detectKey } from "./key";
+  import { keyFromValue, keyLabel, keyValue } from "./keylabel";
   import { parseLyrics } from "./parse";
   import { dropTroubledTimings, expand, hasTroubledTimings, newId, sectionOf, sectionText, SECTION_KINDS, slideText, studioContent, withText } from "./song";
   import { clearEntry, clearStart, clearWords, distributeSlides, entryHeads, formatTime, markInSequence, markSection, markStart, markWord, slideAt, slideStarts, slideWords, wordsInSlide } from "./timeline";
@@ -124,7 +126,10 @@
       }
       song.audio = { path: picked.path, name: picked.name, durationMs: duration };
       song.mode = "track";
+      // Pista nueva, tonalidad por saber: se escucha enseguida.
+      song.key = null;
       changed();
+      detectTrackKey();
     } catch (e) {
       onerror(toMessage(e));
     } finally {
@@ -147,6 +152,36 @@
     if (duration !== null && duration !== song.audio.durationMs) song.audio.durationMs = duration;
     if (duration !== null) player.setTranspose(song.transpose ?? 0);
     return duration !== null;
+  }
+
+  // Tonalidad de la pista: la propone la app al escucharla; quien prepara la corrige si no es.
+  let keyState = $state<"idle" | "detecting" | "detected" | "failed">("idle");
+  /** La segunda candidata, a un clic: si falla, casi siempre es esta (la relativa o la dominante). */
+  let keyAlternative = $state<MusicalKey | null>(null);
+  const KEY_OPTIONS = Array.from({ length: 12 }, (_, tonic) => tonic);
+
+  async function detectTrackKey() {
+    if (keyState === "detecting" || !(await ensureTrack())) return;
+    keyState = "detecting";
+    const path = player.path;
+    // Un respiro para que se vea «Escuchando la pista…» antes del cálculo.
+    await new Promise((r) => setTimeout(r, 30));
+    const audio = await player.mono(ANALYSIS_RATE);
+    const guess = audio && player.path === path ? detectKey(audio.samples, audio.rate) : null;
+    if (!guess) {
+      keyState = "failed";
+      return;
+    }
+    song.key = guess.key;
+    keyAlternative = guess.alternative;
+    keyState = "detected";
+    changed();
+  }
+
+  function setKey(value: string) {
+    song.key = keyFromValue(value);
+    keyState = "idle";
+    changed();
   }
 
   /** El tono de la canción: se guarda con ella y, si su pista está cargada, se oye enseguida. */
@@ -434,7 +469,33 @@
       {#if song.audio && song.mode === "live"}<span class="muted small">{t("studio.trackKept")}</span>{/if}
     </div>
     {#if song.audio}
-      <ToneControl value={song.transpose ?? 0} onchange={setTone} disabled={liveBusy} />
+      <div class="row">
+        <label class="field-row">
+          <span class="label">{t("studio.key")}</span>
+          <select class="field key-select" value={keyValue(song.key)} onchange={(e) => setKey(e.currentTarget.value)} disabled={liveBusy || keyState === "detecting"}>
+            <option value="">{t("studio.key.unknown")}</option>
+            <optgroup label={t("studio.key.majors")}>
+              {#each KEY_OPTIONS as tonic (tonic)}<option value={keyValue({ tonic, minor: false })}>{keyLabel({ tonic, minor: false })}</option>{/each}
+            </optgroup>
+            <optgroup label={t("studio.key.minors")}>
+              {#each KEY_OPTIONS as tonic (tonic)}<option value={keyValue({ tonic, minor: true })}>{keyLabel({ tonic, minor: true })}</option>{/each}
+            </optgroup>
+          </select>
+        </label>
+        <button type="button" class="btn" onclick={detectTrackKey} disabled={liveBusy || keyState === "detecting"}>
+          {keyState === "detecting" ? t("studio.key.detecting") : t("studio.key.detect")}
+        </button>
+      </div>
+      {#if keyState === "detected"}
+        <p class="muted small key-note" role="status">
+          {t("studio.key.detected")}
+          {#if keyAlternative}
+            <button type="button" class="btn ghost small-btn" onclick={() => setKey(keyValue(keyAlternative))}>{t("studio.key.orMaybe", { key: keyLabel(keyAlternative) })}</button>
+          {/if}
+        </p>
+      {/if}
+      {#if keyState === "failed"}<p class="small warn" role="status">{t("studio.key.failed")}</p>{/if}
+      <ToneControl value={song.transpose ?? 0} songKey={song.key} onchange={setTone} disabled={liveBusy} />
       <p class="muted small">{t("studio.tone.hint")}</p>
     {/if}
     {#if picking}<p class="muted small" role="status">{t("studio.preparingTrack")}</p>{/if}
@@ -622,6 +683,11 @@
   .field-row { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .key-select { width: auto; min-width: 13em; }
+  .key-note { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+  .key-note .small-btn { min-height: 32px; padding: 0 10px; font-size: 13px; }
+  .row:has(.key-select) { align-items: flex-end; }
+  .warn { color: var(--warn-text, var(--live)); }
   .row.end { justify-content: flex-end; }
   .grow { flex: 1; min-width: 8em; }
   .name { max-width: 16em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }

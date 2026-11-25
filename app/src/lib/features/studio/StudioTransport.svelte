@@ -81,7 +81,7 @@
           </button>
         </div>
         <!-- Si quien dirige pide otro tono en el momento: dura hasta la próxima canción (el guardado, en el editor). -->
-        <ToneControl value={player.transpose} onchange={(n) => player.setTranspose(n)} />
+        <ToneControl value={player.transpose} songKey={onScreen.song?.key} onchange={(n) => player.setTranspose(n)} />
       {/if}
       {#if trackReady() && !synced()}
         <!-- Sin tiempos la pista no tiene a dónde saltar: que se note, no que parezca que falla. -->

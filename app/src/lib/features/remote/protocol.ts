@@ -2,6 +2,7 @@
 // Este archivo no importa nada de Tauri: lo usa también la página del teléfono, que corre en un navegador.
 import type { BoardMessage } from "./board";
 import type { MarkColor, MarkPart, MarkStyle } from "$lib/features/marks/marks";
+import type { MusicalKey } from "$lib/platform/types";
 
 /** Órdenes del teléfono. Deben coincidir con `domain::Command` del backend. */
 export type RemoteCommand =
@@ -105,6 +106,8 @@ export interface RemoteStudio {
   loop: boolean;
   /** El tono con que suena (semitonos; 0 = el original). */
   transpose?: number;
+  /** La tonalidad de la pista, si se sabe: el teléfono dice en cuál suena con el tono puesto. */
+  key?: MusicalKey | null;
   sections: { id: string; name: string; current: boolean }[];
   /**
    * Se puso otra cosa en pantalla y la canción sigue sonando: su título. `asking`: todavía no se eligió entre
