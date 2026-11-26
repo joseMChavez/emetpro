@@ -8,6 +8,7 @@ use tauri::{AppHandle, State};
 use tokio::sync::watch;
 
 use super::board::Op;
+use super::chat;
 use super::domain::url;
 use super::server::{self, Shared};
 use super::{save_key, RemoteState, Running};
@@ -60,6 +61,7 @@ pub async fn remote_start(app: AppHandle, state: State<'_, RemoteState>) -> Resu
         thumbs: state.thumbs.clone(),
         thumbs_added: state.thumbs_added.subscribe(),
         board: state.board.clone(),
+        chat: state.chat.clone(),
     };
     let port = server::start(shared).await.map_err(|e| CommandError::RemoteFailed { reason: e.to_string() })?;
     let mut running = state.running.lock().unwrap();
@@ -75,6 +77,7 @@ pub fn remote_stop(app: AppHandle, state: State<'_, RemoteState>) -> RemoteInfo 
     // Soltar `stop` apaga el servidor y desconecta los teléfonos. La pizarra dura lo que dura el control remoto.
     if state.running.lock().unwrap().take().is_some() {
         state.board.reset(&app);
+        state.chat.update(&app, |c| c.reset(), |_| true);
     }
     info(&state)
 }
@@ -136,4 +139,28 @@ pub fn remote_board_op(app: AppHandle, state: State<'_, RemoteState>, op: serde_
 #[tauri::command]
 pub fn remote_screen(state: State<'_, RemoteState>, screen: Option<serde_json::Value>) {
     state.board.set_screen(screen);
+}
+
+/// Los mensajes con los teléfonos y quién está conectado (chat.rs).
+#[tauri::command]
+pub fn remote_chat(state: State<'_, RemoteState>) -> serde_json::Value {
+    state.chat.console_view()
+}
+
+/// Un mensaje de la consola para un teléfono (`to`) o para todos. Devuelve su id; None si no vale.
+#[tauri::command]
+pub fn remote_chat_send(app: AppHandle, state: State<'_, RemoteState>, to: Option<String>, text: String, replies: Vec<String>) -> Option<String> {
+    state.chat.update(&app, |c| c.send(to.as_deref(), &text, &replies, chat::now()), Option::is_some)
+}
+
+/// Retirar un mensaje de la consola, o dar por leído uno de un teléfono.
+#[tauri::command]
+pub fn remote_chat_close(app: AppHandle, state: State<'_, RemoteState>, id: String) -> bool {
+    state.chat.update(&app, |c| c.close(&id), |closed| *closed)
+}
+
+/// Las frases que el teléfono ofrece para mandar a la consola.
+#[tauri::command]
+pub fn remote_chat_phrases(app: AppHandle, state: State<'_, RemoteState>, phrases: Vec<String>) {
+    state.chat.update(&app, |c| c.set_phrases(&phrases), |changed| *changed);
 }

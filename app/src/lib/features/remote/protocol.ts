@@ -167,6 +167,61 @@ export interface RemoteCanvas {
     | { kind: "other"; description: string };
 }
 
+/** Mensajes con la consola (remote/chat.rs), como los ve un teléfono. */
+export interface PhoneChat {
+  /** El nombre con que lo conoce la consola; null hasta que se presenta. */
+  name: string | null;
+  /** Lo que la consola le mandó y aún no se respondió, lo más antiguo primero. */
+  pending: { id: string; text: string; replies: string[]; at: number; toAll: boolean }[];
+  /** Sus últimas frases para la consola, la más reciente primero; `read`: la consola ya la vio. */
+  mine: { id: string; text: string; at: number; read: boolean }[];
+  /** Las frases que ofrece para mandar a la consola. */
+  phrases: string[];
+}
+
+/** Lo que dice el teléfono sobre los mensajes. Deben coincidir con `chat::PhoneMessage` del backend. */
+export type PhoneMessage =
+  | { type: "hello"; device: string; name: string }
+  | { type: "seen"; id: string }
+  /** null = «Entendido» de un aviso sin respuestas. */
+  | { type: "reply"; id: string; reply: number | null }
+  | { type: "say"; text: string };
+
 /** Mensaje del servidor al teléfono. `status` es null hasta que la consola publica por primera vez.
- *  Los de la pizarra (board.ts) llegan por el mismo WebSocket. */
-export type ServerMessage = { type: "status"; status: RemoteStatus | null } | BoardMessage;
+ *  Los de la pizarra (board.ts) y los mensajes con la consola llegan por el mismo WebSocket. */
+export type ServerMessage = { type: "status"; status: RemoteStatus | null } | { type: "chat"; chat: PhoneChat } | BoardMessage;
+
+/** Alguien conectado desde un teléfono, como lo ve la consola. */
+export interface ChatPerson {
+  device: string;
+  name: string;
+  /** Conexiones abiertas: 0 = desconectado. */
+  online: number;
+  /** Cuándo se conectó o desconectó por última vez (ms). */
+  since: number;
+}
+
+/** Un mensaje: de la consola (`from` null) a un teléfono o a todos (`to` null), o de un teléfono a la consola. */
+export interface ChatNote {
+  id: string;
+  from: string | null;
+  to: string | null;
+  text: string;
+  /** Vacío = solo un aviso. */
+  replies: string[];
+  at: number;
+  seen: string[];
+  answer: { by: string; reply: number | null; at: number } | null;
+  closed: boolean;
+}
+
+export interface ConsoleChat {
+  people: ChatPerson[];
+  notes: ChatNote[];
+}
+
+/** Hasta cuántas respuestas puede ofrecer un mensaje, y de qué largo (como en chat.rs). */
+export const MAX_REPLIES = 4;
+export const MAX_REPLY = 40;
+export const MAX_NOTE = 300;
+export const MAX_NAME = 40;

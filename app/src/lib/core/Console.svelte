@@ -22,6 +22,8 @@
   import { chooseBible, findItem, remote, remoteStatus, syncRemote, syncThumbs, watchRemoteClients } from "$lib/features/remote/console.svelte";
   import { rememberLive, resume } from "$lib/features/output/history.svelte";
   import type { RemoteCommand } from "$lib/features/remote/protocol";
+  import ChatPanel from "$lib/features/remote/ChatPanel.svelte";
+  import { acknowledge, answerText, closeNote, incoming, personName, phrases as chatPhrases, watchChat } from "$lib/features/remote/chat.svelte";
   import { layerKey } from "$lib/features/remote/board";
   import { sheetNumber, strokesOf, watchBoard } from "$lib/features/remote/board.svelte";
   import { openPlan } from "$lib/features/plans/plans.svelte";
@@ -51,6 +53,9 @@
   let output = $state<OutputState>({ open: false, monitorName: null, content: { kind: "empty" }, style: DEFAULT_STYLE });
   let prepared = $state<OutputContent>({ kind: "empty" });
   let error = $state<Message | null>(null);
+  /** El panel de mensajes al remoto, bajo su botón de la barra de arriba. */
+  let chatOpen = $state(false);
+  let chatIncoming = $derived(incoming());
   let busy = $state(false);
 
   // Video que este equipo no reproduce (HEVC de iPhone…): se ofrece convertirlo a MP4 (media/video.rs).
@@ -452,6 +457,12 @@
     platform.remotePublish(status).catch(() => {});
   });
 
+  // Las frases que el teléfono ofrece para mandar a la consola, en el idioma de la consola.
+  $effect(() => {
+    const list = chatPhrases();
+    untrack(() => platform.remoteChatPhrases(list).catch(() => {}));
+  });
+
   // Miniaturas del PDF en pantalla para los teléfonos. Solo con teléfonos conectados.
   $effect(() => {
     const content = output.content;
@@ -475,6 +486,7 @@
     const unlistenVideo = platform.onVideoTime((time) => (videoTime = { ...time, at: performance.now() }));
     const unlistenRemote = platform.onRemoteCommand(onRemoteCommand);
     const stopWatchingClients = watchRemoteClients();
+    const stopWatchingChat = watchChat();
     // El sistema solo deja sonar audio pedido con un gesto: el primer clic en la consola habilita la pista de
     // Media Studio para el resto de la sesión (arrancar al enviar, o desde el teléfono).
     const unlockAudio = () => studioPlayer.unlock();
@@ -490,6 +502,7 @@
       unlistenVideo.then((fn) => fn());
       unlistenRemote.then((fn) => fn());
       stopWatchingClients();
+      stopWatchingChat();
     };
   });
 </script>
@@ -515,10 +528,18 @@
     {/if}
 
     {#if remote.info?.running}
-      <button class="status stream-pill" class:on={remote.info.clients > 0} onclick={() => chooseView("settings")}>
-        <span class="dot" aria-hidden="true"></span>
-        {t("remote.pill", { n: remote.info.clients })}
-      </button>
+      <!-- Abre los mensajes al remoto; el número rojo es lo que espera ser leído. -->
+      <div class="chat-anchor">
+        <button class="status stream-pill" class:on={remote.info.clients > 0} data-chat-toggle aria-expanded={chatOpen} onclick={() => (chatOpen = !chatOpen)}>
+          <span class="dot" aria-hidden="true"></span>
+          {t("remote.pill", { n: remote.info.clients })}
+          <svg class="chat-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4V5Z" /></svg>
+          {#if chatIncoming.length > 0}<span class="unread" aria-label={t("chat.unread", { n: chatIncoming.length })}>{chatIncoming.length}</span>{/if}
+        </button>
+        {#if chatOpen}
+          <ChatPanel onclose={() => (chatOpen = false)} onsettings={() => { chatOpen = false; chooseView("settings"); }} />
+        {/if}
+      </div>
     {/if}
 
     <div class="output-controls">
@@ -564,8 +585,20 @@
     </div>
   </header>
 
-  {#if outputMonitorLost || error || storage.error || storage.problem}
+  {#if outputMonitorLost || error || storage.error || storage.problem || chatIncoming.length > 0}
     <div class="alerts">
+      <!-- Lo que llega de los teléfonos: frases para la consola y respuestas a sus mensajes. -->
+      {#each chatIncoming as note (note.id)}
+        <p class="alert chat-alert" role="alert">
+          {#if note.from !== null}
+            <span><strong>{personName(note.from)}:</strong> {note.text}</span>
+            <button class="btn" onclick={() => closeNote(note.id)}>{t("chat.gotIt")}</button>
+          {:else}
+            <span>{t("chat.answerAlert", { name: personName(note.answer?.by ?? null), answer: answerText(note), text: note.text })}</span>
+            <button class="btn ghost" onclick={() => acknowledge(note.id)} aria-label={t("error.dismiss")}>✕</button>
+          {/if}
+        </p>
+      {/each}
       {#if storage.problem}
         {@const message = storeProblemMessage(storage.problem)}
         <p class="alert" role="alert">
@@ -859,6 +892,10 @@
   .settings-item { margin-top: auto; }
   .stream-area { flex: 1; min-width: 0; min-height: 0; padding: 14px 16px 16px; overflow: auto; }
   .sidebar hr { width: 100%; margin: 6px 0; border: 0; border-top: 1px solid var(--border); }
+  .chat-anchor { position: relative; }
+  .chat-icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+  .unread { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--live); color: #fff; font-size: 11.5px; display: inline-grid; place-items: center; }
+  .chat-alert { background: var(--accent-soft); color: var(--text); }
   .stream-pill { font: inherit; font-size: 14px; font-weight: 600; border: 0; cursor: pointer; }
   .status.warn { background: var(--warn-bg); color: var(--warn-text); }
   .sidebar {

@@ -1,5 +1,5 @@
 // Tipos compartidos entre la interfaz y el backend. No dependen de Tauri (ver D-010).
-import type { RemoteCommand } from "$lib/features/remote/protocol";
+import type { ConsoleChat, RemoteCommand } from "$lib/features/remote/protocol";
 import type { Board, BoardMessage, BoardOp, ScreenLayout } from "$lib/features/remote/board";
 import type { Marks } from "$lib/features/marks/marks";
 import type { RichSlide } from "$lib/features/richtext/rich";
@@ -692,6 +692,15 @@ export interface Platform {
   /** La ventana de salida cuenta cómo es la pantalla y dónde quedó el texto, para dibujar encima desde el teléfono. */
   remoteScreen(screen: ScreenLayout | null): Promise<void>;
   onRemoteBoard(handler: (message: BoardMessage) => void): Promise<() => void>;
+  /** Los mensajes con los teléfonos y quién está conectado (features/remote/chat.svelte.ts). */
+  remoteChat(): Promise<ConsoleChat>;
+  /** Un mensaje para un teléfono (`to`) o para todos (null). Devuelve su id; null si no vale. */
+  remoteChatSend(to: string | null, text: string, replies: string[]): Promise<string | null>;
+  /** Retirar un mensaje de la consola, o dar por leído uno de un teléfono. */
+  remoteChatClose(id: string): Promise<boolean>;
+  /** Las frases que el teléfono ofrece para mandar a la consola. */
+  remoteChatPhrases(phrases: string[]): Promise<void>;
+  onRemoteChat(handler: (chat: ConsoleChat) => void): Promise<() => void>;
 
   // Importar y exportar letras (features/transfer)
   /** Elige un .emetpro, .selah o .hpls y devuelve la vista previa; null si se cancela. No guarda nada. */

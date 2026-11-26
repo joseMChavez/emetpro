@@ -39,6 +39,14 @@ const SCHEMA = {
   obsAutoConnect: { initial: true, valid: isBoolean },
   /** Servidor del control remoto encendido; se vuelve a encender al abrir EmetPro. */
   remoteEnabled: { initial: false, valid: isBoolean },
+  /** Mensajes preparados para mandar a los teléfonos; null = los de serie, en el idioma de la consola. */
+  remoteNotes: {
+    initial: null as { text: string; replies: string[] }[] | null,
+    valid: (v: unknown) =>
+      v === null || (Array.isArray(v) && v.every((n) => typeof n === "object" && n !== null && isString(n.text) && Array.isArray(n.replies) && n.replies.every(isString))),
+  },
+  /** Frases que el teléfono ofrece para mandar a la consola; null = las de serie. */
+  remotePhrases: { initial: null as string[] | null, valid: (v: unknown) => v === null || (Array.isArray(v) && v.every(isString)) },
 };
 
 type Schema = typeof SCHEMA;
@@ -53,7 +61,7 @@ export const SECTIONS = {
   projection: ["outputStyle", "confirmSend"],
   bible: ["bible", "bible2", "hiddenBibles"],
   stream: ["obsTextSource", "obsWaitMessage", "obsAutoConnect"],
-  remote: ["remoteEnabled"],
+  remote: ["remoteEnabled", "remoteNotes", "remotePhrases"],
 } satisfies Record<string, SettingKey[]>;
 
 function initial(): Settings {
