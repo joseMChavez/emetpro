@@ -17,8 +17,8 @@
   import RecognizerDownload from "$lib/features/studio/RecognizerDownload.svelte";
   import { loadSeparator, removeSeparator, separator } from "$lib/features/studio/separator.svelte";
   import SeparatorDownload from "$lib/features/studio/SeparatorDownload.svelte";
-  import { platform, type BibleInfo, type OutputStyle } from "$lib/platform";
-  import { resetSettings, SECTIONS, setSetting, settings } from "$lib/core/settings.svelte";
+  import { platform, type BibleInfo, type OutputStyle, type StoreProblem } from "$lib/platform";
+  import { resetSettings, SECTIONS, setSetting, settings, storeProblemMessage } from "$lib/core/settings.svelte";
   import { setTheme, type ThemeChoice } from "$lib/core/theme.svelte";
 
   let {
@@ -42,6 +42,7 @@
   type Section = keyof typeof SECTIONS | "songs" | "plans" | "all" | "bibles" | "office" | "whisper" | "separator" | `bible:${string}`;
 
   let path = $state<string | null | undefined>(undefined);
+  let problem = $state<StoreProblem | null>(null);
   let waitDraft = $state(settings.obsWaitMessage);
   let confirming = $state<Section | null>(null);
   let done = $state<Section | null>(null);
@@ -131,7 +132,10 @@
 
   onMount(() => {
     if (bibles.all.length === 0) loadBibles().catch((e) => onerror(toMessage(e)));
-    platform.storePath().then((p) => (path = p)).catch(() => (path = null));
+    platform
+      .storeStatus()
+      .then((s) => ((path = s.path), (problem = s.problem)))
+      .catch(() => (path = null));
     loadOffice().catch((e) => onerror(toMessage(e)));
     loadRecognizer().catch((e) => onerror(toMessage(e)));
     loadSeparator().catch((e) => onerror(toMessage(e)));
@@ -348,7 +352,8 @@
   <section class="card danger-zone">
     <h2>{t("settings.storage")}</h2>
     {#if path === null}
-      <p class="warn">{t("settings.inMemory")}</p>
+      {@const message = storeProblemMessage(problem ?? { code: "other", message: "?" })}
+      <p class="warn">{t(message.key, message.params)}</p>
     {:else if path}
       <p class="muted small">{t("settings.storedAt")} <code>{path}</code></p>
     {/if}

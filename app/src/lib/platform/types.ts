@@ -318,6 +318,15 @@ export interface Song {
 /** Ajustes tal como están en la base: clave → valor JSON. Las claves ausentes valen lo de por defecto. */
 export type StoredSettings = Record<string, unknown>;
 
+/** Por qué no se pudo abrir la base (core/db.rs). Salvo «damaged», el archivo queda intacto. */
+export type StoreProblem = { code: "diskFull" } | { code: "noPermission" } | { code: "damaged" } | { code: "other"; message: string };
+
+export interface StoreStatus {
+  /** Archivo de la base; null si se trabaja en memoria. */
+  path: string | null;
+  problem: StoreProblem | null;
+}
+
 /** Error devuelto por el backend; la interfaz lo traduce al idioma elegido. */
 export type CommandError =
   | { code: "monitorDisconnected" }
@@ -602,8 +611,8 @@ export interface Platform {
   settingsReset(keys: string[]): Promise<StoredSettings>;
   /** Cada cambio de ajustes, hecho desde cualquier ventana. */
   onSettingsChanged(handler: (settings: StoredSettings) => void): Promise<() => void>;
-  /** Archivo de la base; null si se trabaja en memoria porque no se pudo abrir. */
-  storePath(): Promise<string | null>;
+  /** Archivo de la base, o por qué se trabaja en memoria (path null). */
+  storeStatus(): Promise<StoreStatus>;
   songsList(): Promise<Song[]>;
   songSave(song: Song): Promise<void>;
   songDelete(id: string): Promise<void>;

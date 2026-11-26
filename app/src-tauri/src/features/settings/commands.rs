@@ -1,7 +1,8 @@
+use serde::Serialize;
 use tauri::{AppHandle, State};
 
 use super::emit_settings;
-use crate::core::db::{with_store, Db};
+use crate::core::db::{with_store, Db, StoreProblem};
 use crate::core::error::CommandError;
 
 #[tauri::command]
@@ -31,9 +32,19 @@ pub fn settings_reset(
     emit_settings(&app, &state)
 }
 
-/// Dónde está la base (para mostrarlo en Ajustes); None si se trabaja en memoria.
+/// Dónde está la base, o por qué se trabaja en memoria (para mostrarlo en Ajustes).
+#[derive(Serialize)]
+pub struct StoreStatus {
+    path: Option<String>,
+    problem: Option<StoreProblem>,
+}
+
 #[tauri::command]
-pub fn store_path(state: State<'_, Db>) -> Option<String> {
+pub fn store_status(state: State<'_, Db>) -> StoreStatus {
     let guard = state.0.lock().unwrap();
-    guard.as_ref()?.path().map(|p| p.display().to_string())
+    let store = guard.as_ref();
+    StoreStatus {
+        path: store.and_then(|s| s.path()).map(|p| p.display().to_string()),
+        problem: store.and_then(|s| s.problem()).cloned(),
+    }
 }

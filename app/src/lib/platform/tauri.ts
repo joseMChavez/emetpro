@@ -49,7 +49,7 @@ export const tauriPlatform: Platform = {
   settingsSet: (key, value) => invoke("plugin:settings|settings_set", { key, value }),
   settingsReset: (keys) => invoke("plugin:settings|settings_reset", { keys }),
   onSettingsChanged: (handler) => listen<StoredSettings>("settings-changed", (event) => handler(event.payload)),
-  storePath: () => invoke("plugin:settings|store_path"),
+  storeStatus: () => invoke("plugin:settings|store_status"),
   songsList: () => invoke("plugin:songs|songs_list"),
   songSave: (song) => invoke("plugin:songs|song_save", { song }),
   songDelete: (id) => invoke("plugin:songs|song_delete", { id }),
