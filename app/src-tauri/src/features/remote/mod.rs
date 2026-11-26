@@ -5,6 +5,7 @@
 // (evento «remote-command») y reparte a los teléfonos lo que la consola publica (remote_publish).
 // La interfaz del teléfono es la ruta /remote de la misma app (app/src/lib/features/remote/).
 mod board;
+mod chat;
 mod commands;
 pub mod domain;
 mod server;
@@ -21,9 +22,10 @@ use tauri::{AppHandle, Emitter, Manager, Wry};
 use tokio::sync::{broadcast, watch};
 
 use self::board::{Board, Op};
+use self::chat::Chat;
 use self::domain::{is_key, new_key};
 use self::thumbs::Thumbs;
-use crate::core::events::REMOTE_BOARD_EVENT;
+use crate::core::events::{MAIN_LABEL, REMOTE_BOARD_EVENT, REMOTE_CHAT_EVENT};
 
 pub const NAME: &str = "remote";
 
@@ -40,6 +42,11 @@ pub fn plugin() -> TauriPlugin<Wry> {
             commands::remote_board,
             commands::remote_board_op,
             commands::remote_screen,
+            commands::remote_chat,
+            commands::remote_chat_send,
+            commands::remote_chat_close,
+            commands::remote_chat_phrases,
+            commands::remote_notify,
         ])
         .setup(|app, _api| {
             let key = load_key(app);
@@ -51,6 +58,7 @@ pub fn plugin() -> TauriPlugin<Wry> {
                 thumbs: Arc::new(Mutex::new(Thumbs::default())),
                 thumbs_added: watch::channel(0).0,
                 board: Arc::new(BoardHub::new()),
+                chat: Arc::new(ChatHub::new()),
             });
             Ok(())
         })
@@ -68,6 +76,46 @@ pub struct RemoteState {
     thumbs_added: watch::Sender<u64>,
     /// La pizarra (board.rs): se borra al apagar el control remoto.
     board: Arc<BoardHub>,
+    /// Los mensajes con los teléfonos (chat.rs): se borran al apagar el control remoto.
+    chat: Arc<ChatHub>,
+}
+
+/// Los mensajes y su reparto: a la consola por el evento REMOTE_CHAT_EVENT (todo) y a cada teléfono por su
+/// WebSocket (solo lo suyo: server.rs lo pide con `phone_view` cada vez que `changed` avisa).
+pub struct ChatHub {
+    chat: Mutex<Chat>,
+    changed: watch::Sender<u64>,
+}
+
+impl ChatHub {
+    fn new() -> Self {
+        ChatHub { chat: Mutex::new(Chat::default()), changed: watch::channel(0).0 }
+    }
+
+    pub fn subscribe(&self) -> watch::Receiver<u64> {
+        self.changed.subscribe()
+    }
+
+    /// Aplica un cambio; si cambió algo, avisa a la consola y a los teléfonos. Devuelve lo que devuelve `change`.
+    pub fn update<T>(&self, app: &AppHandle, change: impl FnOnce(&mut Chat) -> T, changed: impl Fn(&T) -> bool) -> T {
+        let mut chat = self.chat.lock().unwrap();
+        let result = change(&mut chat);
+        if changed(&result) {
+            let view = chat.console_view();
+            drop(chat);
+            self.changed.send_modify(|n| *n = n.wrapping_add(1));
+            let _ = app.emit_to(MAIN_LABEL, REMOTE_CHAT_EVENT, view);
+        }
+        result
+    }
+
+    pub fn console_view(&self) -> serde_json::Value {
+        self.chat.lock().unwrap().console_view()
+    }
+
+    pub fn phone_view(&self, device: &str) -> String {
+        self.chat.lock().unwrap().phone_view(device)
+    }
 }
 
 /// Cuántos mensajes de la pizarra puede ir atrasado un teléfono antes de mandarle la pizarra entera.

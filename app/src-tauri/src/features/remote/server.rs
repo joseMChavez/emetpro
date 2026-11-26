@@ -6,7 +6,8 @@
 //   GET /api/thumb       miniatura de una página del PDF en pantalla (thumbs.rs)
 //   GET /remote.webmanifest?key=…   para instalarla como app (PWA); con una clave válida, la app abre ya vinculada
 //   GET /ws?key=…        WebSocket: el teléfono manda órdenes (domain::Command) y recibe lo que hay en pantalla;
-//                        también dibuja en la pizarra (board::Op) y recibe lo que dibujan los demás
+//                        también dibuja en la pizarra (board::Op) y recibe lo que dibujan los demás,
+//                        y se cruza mensajes con la consola (chat.rs)
 //
 // Todo lo que no es la página pide la clave. Las órdenes no se aplican aquí: se pasan a la consola.
 use std::net::{IpAddr, Ipv4Addr, UdpSocket};
@@ -27,9 +28,10 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::watch;
 
 use super::board::Op;
+use super::chat::{self, PhoneMessage};
 use super::domain::{same_key, Command, PORTS};
 use super::thumbs::{Lookup, Thumbs};
-use super::BoardHub;
+use super::{BoardHub, ChatHub};
 use crate::core::events::{MAIN_LABEL, REMOTE_CLIENTS_EVENT, REMOTE_COMMAND_EVENT};
 use crate::features::bible;
 
@@ -47,6 +49,7 @@ pub struct Shared {
     pub thumbs: Arc<Mutex<Thumbs>>,
     pub thumbs_added: watch::Receiver<u64>,
     pub board: Arc<BoardHub>,
+    pub chat: Arc<ChatHub>,
 }
 
 impl Shared {
@@ -127,6 +130,10 @@ async fn client(shared: Shared, mut socket: WebSocket) {
     // Antes de mandar la pizarra entera: así no se pierde nada de lo que se dibuje entretanto.
     let mut board = shared.board.subscribe();
     let my_key = key.borrow_and_update().clone();
+    let mut notes = shared.chat.subscribe();
+    // Quién es este teléfono (chat.rs): lo dice él al conectarse. Hasta entonces no recibe mensajes.
+    let mut me: Option<String> = None;
+    let mut last_view = String::new();
     shared.connected(1);
 
     let first = status.borrow_and_update().clone();
@@ -149,6 +156,17 @@ async fn client(shared: Shared, mut socket: WebSocket) {
                     };
                     if socket.send(Message::Text(text.into())).await.is_err() { break; }
                 }
+                changed = notes.changed() => {
+                    if changed.is_err() { break; }
+                    notes.borrow_and_update();
+                    if let Some(device) = &me {
+                        let view = shared.chat.phone_view(device);
+                        if view != last_view {
+                            if socket.send(Message::Text(view.clone().into())).await.is_err() { break; }
+                            last_view = view;
+                        }
+                    }
+                }
                 changed = key.changed() => {
                     if changed.is_err() || *key.borrow_and_update() != my_key { break; }
                 }
@@ -157,6 +175,18 @@ async fn client(shared: Shared, mut socket: WebSocket) {
                     Some(Ok(Message::Text(text))) => {
                         if let Some(command) = Command::parse(&text) {
                             let _ = shared.app.emit_to(MAIN_LABEL, REMOTE_COMMAND_EVENT, &command);
+                        } else if let Some(message) = PhoneMessage::parse(&text) {
+                            if let PhoneMessage::Hello { device, name } = &message {
+                                let at = chat::now();
+                                if shared.chat.update(&shared.app, |c| c.hello(me.as_deref(), device, name, at), |ok| *ok) {
+                                    me = Some(device.clone());
+                                    // Lo pendiente le llega aunque no haya cambiado nada (p. ej. al reconectar).
+                                    last_view.clear();
+                                    notes.mark_changed();
+                                }
+                            } else if let Some(device) = &me {
+                                on_phone_message(&shared, device, message);
+                            }
                         } else if let Some(op) = Op::parse(&text) {
                             shared.board.apply(&shared.app, op);
                         }
@@ -168,7 +198,28 @@ async fn client(shared: Shared, mut socket: WebSocket) {
         }
     }
     let _ = socket.send(Message::Close(None)).await;
+    if let Some(device) = me {
+        shared.chat.update(&shared.app, |c| c.leave(&device, chat::now()), |_| true);
+    }
     shared.connected(-1);
+}
+
+/// Lo que dice sobre los mensajes un teléfono que ya se presentó (`device`).
+fn on_phone_message(shared: &Shared, device: &str, message: PhoneMessage) {
+    let at = chat::now();
+    let app = &shared.app;
+    match message {
+        PhoneMessage::Hello { .. } => {}
+        PhoneMessage::Seen { id } => {
+            shared.chat.update(app, |c| c.seen(device, &id), |changed| *changed);
+        }
+        PhoneMessage::Reply { id, reply } => {
+            shared.chat.update(app, |c| c.reply(device, &id, reply, at), |changed| *changed);
+        }
+        PhoneMessage::Say { text } => {
+            shared.chat.update(app, |c| c.say(device, &text, at), |changed| *changed);
+        }
+    }
 }
 
 /// El manifiesto de la app instalada. Lleva la clave en `start_url` solo si es la vigente: el teléfono guarda

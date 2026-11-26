@@ -8,6 +8,7 @@ use tauri::{AppHandle, State};
 use tokio::sync::watch;
 
 use super::board::Op;
+use super::chat;
 use super::domain::url;
 use super::server::{self, Shared};
 use super::{save_key, RemoteState, Running};
@@ -60,6 +61,7 @@ pub async fn remote_start(app: AppHandle, state: State<'_, RemoteState>) -> Resu
         thumbs: state.thumbs.clone(),
         thumbs_added: state.thumbs_added.subscribe(),
         board: state.board.clone(),
+        chat: state.chat.clone(),
     };
     let port = server::start(shared).await.map_err(|e| CommandError::RemoteFailed { reason: e.to_string() })?;
     let mut running = state.running.lock().unwrap();
@@ -75,6 +77,7 @@ pub fn remote_stop(app: AppHandle, state: State<'_, RemoteState>) -> RemoteInfo 
     // Soltar `stop` apaga el servidor y desconecta los teléfonos. La pizarra dura lo que dura el control remoto.
     if state.running.lock().unwrap().take().is_some() {
         state.board.reset(&app);
+        state.chat.update(&app, |c| c.reset(), |_| true);
     }
     info(&state)
 }
@@ -136,4 +139,60 @@ pub fn remote_board_op(app: AppHandle, state: State<'_, RemoteState>, op: serde_
 #[tauri::command]
 pub fn remote_screen(state: State<'_, RemoteState>, screen: Option<serde_json::Value>) {
     state.board.set_screen(screen);
+}
+
+/// Los mensajes con los teléfonos y quién está conectado (chat.rs).
+#[tauri::command]
+pub fn remote_chat(state: State<'_, RemoteState>) -> serde_json::Value {
+    state.chat.console_view()
+}
+
+/// Un mensaje de la consola para un teléfono (`to`) o para todos. Devuelve su id; None si no vale.
+#[tauri::command]
+pub fn remote_chat_send(app: AppHandle, state: State<'_, RemoteState>, to: Option<String>, text: String, replies: Vec<String>) -> Option<String> {
+    state.chat.update(&app, |c| c.send(to.as_deref(), &text, &replies, chat::now()), Option::is_some)
+}
+
+/// Retirar un mensaje de la consola, o dar por leído uno de un teléfono.
+#[tauri::command]
+pub fn remote_chat_close(app: AppHandle, state: State<'_, RemoteState>, id: String) -> bool {
+    state.chat.update(&app, |c| c.close(&id), |closed| *closed)
+}
+
+/// Las frases que el teléfono ofrece para mandar a la consola.
+#[tauri::command]
+pub fn remote_chat_phrases(app: AppHandle, state: State<'_, RemoteState>, phrases: Vec<String>) {
+    state.chat.update(&app, |c| c.set_phrases(&phrases), |changed| *changed);
+}
+
+/// Aviso del sistema (el de Windows, macOS o Linux) de un mensaje que llegó del remoto. Sin `always`, solo si la
+/// consola no está al frente: tapada por la pantalla de salida, minimizada o con otra aplicación delante (con la
+/// consola delante ya se ve arriba, en la lista de avisos). Devuelve si se mostró.
+#[tauri::command]
+pub fn remote_notify(app: AppHandle, title: String, body: String, always: bool) -> bool {
+    use tauri::Manager;
+    use tauri_plugin_notification::NotificationExt;
+    let in_front = app
+        .get_webview_window(crate::core::events::MAIN_LABEL)
+        .is_some_and(|w| w.is_focused().unwrap_or(false) && !w.is_minimized().unwrap_or(false));
+    if in_front && !always {
+        return false;
+    }
+    let (Some(title), Some(body)) = (short(&title, NOTIFY_TITLE), short(&body, NOTIFY_BODY)) else {
+        return false;
+    };
+    app.notification().builder().title(title).body(body).show().is_ok()
+}
+
+const NOTIFY_TITLE: usize = chat::MAX_NAME + 40;
+const NOTIFY_BODY: usize = chat::MAX_TEXT + chat::MAX_REPLY + 40;
+
+/// Recortado a `max` caracteres (con «…»), sin caracteres de control; None si queda vacío.
+fn short(text: &str, max: usize) -> Option<String> {
+    let mut chars = text.chars().map(|c| if c.is_control() { ' ' } else { c });
+    let mut out: String = chars.by_ref().take(max).collect();
+    if chars.next().is_some() {
+        out.push('…');
+    }
+    chat::clean(&out, max + 1)
 }

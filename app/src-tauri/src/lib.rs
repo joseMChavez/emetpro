@@ -16,6 +16,7 @@ pub fn run() {
         .plugin(core::legacy::plugin())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(features::output::plugin())
         .plugin(features::media::plugin())
         .plugin(features::presentations::plugin())

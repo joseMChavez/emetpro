@@ -7,8 +7,9 @@
   import { parseQuery } from "$lib/features/bible/reference";
   import { i18n, t, tCount, type MessageKey } from "$lib/i18n/index.svelte";
   import type { Verse } from "$lib/platform";
-  import type { RemoteCommand, RemoteStatus, ServerMessage } from "./protocol";
+  import type { PhoneChat, PhoneMessage, RemoteCommand, RemoteStatus, ServerMessage } from "./protocol";
   import BoardPad from "./BoardPad.svelte";
+  import RemoteChat from "./RemoteChat.svelte";
   import { keyWithTone } from "$lib/features/studio/keylabel";
   import { hiddenAt, sectionOf, summaries } from "$lib/features/plans/sections";
   import { folded, setFolded, toggleFold, unfold } from "$lib/features/plans/fold.svelte";
@@ -33,6 +34,10 @@
   const key = readKey();
   let connection = $state<Connection>(key ? "connecting" : "noKey");
   let status = $state<RemoteStatus | null>(null);
+  /** Mensajes con la consola (RemoteChat.svelte). */
+  let chat = $state<PhoneChat | null>(null);
+  /** Sube cada vez que se abre la conexión: el teléfono vuelve a presentarse. */
+  let link = $state(0);
   let step = $state<Step>({ kind: "books" });
   let query = $state("");
   let problem = $state<string | null>(null);
@@ -121,6 +126,7 @@
       opened = true;
       retries = 0;
       connection = "open";
+      link++;
       reloadIfUpdated();
     };
     ws.onmessage = (event) => {
@@ -128,6 +134,8 @@
         const message = JSON.parse(event.data) as ServerMessage;
         if (message.type === "status") {
           status = message.status;
+        } else if (message.type === "chat") {
+          chat = message.chat;
         } else if (!(message.type === "op" && message.op.type === "draw" && ownStrokes.has(message.op.stroke))) {
           board = applyMessage(board, message);
           boardVersion++;
@@ -161,6 +169,10 @@
   function command(c: RemoteCommand) {
     if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(c));
     if (c.type !== "goTo") clearUndo();
+  }
+
+  function talk(message: PhoneMessage) {
+    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
   }
 
   /** Un cambio en la pizarra: se ve aquí enseguida y se manda al servidor, que lo reparte. */
@@ -438,6 +450,9 @@
         <span class="dot" aria-hidden="true"></span>
         {connection === "open" ? t("remote.connected") : connection === "connecting" ? t("remote.connecting") : ""}
       </span>
+      {#if connection !== "noKey" && connection !== "rejected"}
+        <RemoteChat {chat} online={connection === "open"} {link} send={talk} />
+      {/if}
       {#if canFullscreen}
         <button class="btn ghost icon" onclick={toggleFullscreen} aria-label={t(fullscreen ? "remote.exitFullscreen" : "remote.fullscreen")}>
           <svg viewBox="0 0 24 24" aria-hidden="true">

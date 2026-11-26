@@ -2,7 +2,7 @@
 // Cada funcionalidad del backend es un plugin interno: sus comandos se llaman «plugin:<funcionalidad>|<comando>».
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
-import type { RemoteCommand } from "$lib/features/remote/protocol";
+import type { ConsoleChat, RemoteCommand } from "$lib/features/remote/protocol";
 import type { BoardMessage } from "$lib/features/remote/board";
 import type { OfficeProgress, OutputState, Platform, PrepareProgress, SeparatorProgress, StoredSettings, StudioTime, VideoTime, WhisperProgress } from "./types";
 
@@ -104,6 +104,12 @@ export const tauriPlatform: Platform = {
   remoteBoardOp: (op) => invoke("plugin:remote|remote_board_op", { op }),
   remoteScreen: (screen) => invoke("plugin:remote|remote_screen", { screen }),
   onRemoteBoard: (handler) => listen<BoardMessage>("remote-board", (event) => handler(event.payload)),
+  remoteChat: () => invoke("plugin:remote|remote_chat"),
+  remoteChatSend: (to, text, replies) => invoke("plugin:remote|remote_chat_send", { to, text, replies }),
+  remoteChatClose: (id) => invoke("plugin:remote|remote_chat_close", { id }),
+  remoteChatPhrases: (phrases) => invoke("plugin:remote|remote_chat_phrases", { phrases }),
+  remoteNotify: (title, body, always) => invoke("plugin:remote|remote_notify", { title, body, always }),
+  onRemoteChat: (handler) => listen<ConsoleChat>("remote-chat", (event) => handler(event.payload)),
   transferImportPick: (title, filterName) => invoke("plugin:transfer|transfer_import_pick", { title, filterName }),
   transferImportApply: (onConflict, planName, importedSuffix) =>
     invoke("plugin:transfer|transfer_import_apply", { onConflict, planName, importedSuffix }),

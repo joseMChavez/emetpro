@@ -22,3 +22,6 @@ pub const REMOTE_CLIENTS_EVENT: &str = "remote-clients";
 
 /// Cambios en la pizarra del control remoto, para la consola y la salida (remote/board.rs).
 pub const REMOTE_BOARD_EVENT: &str = "remote-board";
+
+/// Los mensajes entre la consola y los teléfonos del control remoto (remote/chat.rs).
+pub const REMOTE_CHAT_EVENT: &str = "remote-chat";
