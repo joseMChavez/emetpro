@@ -47,6 +47,12 @@ const SCHEMA = {
   },
   /** Frases que el teléfono ofrece para mandar a la consola; null = las de serie. */
   remotePhrases: { initial: null as string[] | null, valid: (v: unknown) => v === null || (Array.isArray(v) && v.every(isString)) },
+  /** Cómo avisa la consola de lo que llega del remoto: solo arriba, en la lista de avisos ("app"), o además con
+   * la notificación del sistema cuando la consola no está al frente ("background") o siempre ("always"). */
+  remoteNotify: {
+    initial: "app" as "app" | "background" | "always",
+    valid: (v: unknown) => v === "app" || v === "background" || v === "always",
+  },
 };
 
 type Schema = typeof SCHEMA;
@@ -61,7 +67,7 @@ export const SECTIONS = {
   projection: ["outputStyle", "confirmSend"],
   bible: ["bible", "bible2", "hiddenBibles"],
   stream: ["obsTextSource", "obsWaitMessage", "obsAutoConnect"],
-  remote: ["remoteEnabled", "remoteNotes", "remotePhrases"],
+  remote: ["remoteEnabled", "remoteNotes", "remotePhrases", "remoteNotify"],
 } satisfies Record<string, SettingKey[]>;
 
 function initial(): Settings {

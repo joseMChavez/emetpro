@@ -164,3 +164,35 @@ pub fn remote_chat_close(app: AppHandle, state: State<'_, RemoteState>, id: Stri
 pub fn remote_chat_phrases(app: AppHandle, state: State<'_, RemoteState>, phrases: Vec<String>) {
     state.chat.update(&app, |c| c.set_phrases(&phrases), |changed| *changed);
 }
+
+/// Aviso del sistema (el de Windows, macOS o Linux) de un mensaje que llegó del remoto. Sin `always`, solo si la
+/// consola no está al frente: tapada por la pantalla de salida, minimizada o con otra aplicación delante (con la
+/// consola delante ya se ve arriba, en la lista de avisos). Devuelve si se mostró.
+#[tauri::command]
+pub fn remote_notify(app: AppHandle, title: String, body: String, always: bool) -> bool {
+    use tauri::Manager;
+    use tauri_plugin_notification::NotificationExt;
+    let in_front = app
+        .get_webview_window(crate::core::events::MAIN_LABEL)
+        .is_some_and(|w| w.is_focused().unwrap_or(false) && !w.is_minimized().unwrap_or(false));
+    if in_front && !always {
+        return false;
+    }
+    let (Some(title), Some(body)) = (short(&title, NOTIFY_TITLE), short(&body, NOTIFY_BODY)) else {
+        return false;
+    };
+    app.notification().builder().title(title).body(body).show().is_ok()
+}
+
+const NOTIFY_TITLE: usize = chat::MAX_NAME + 40;
+const NOTIFY_BODY: usize = chat::MAX_TEXT + chat::MAX_REPLY + 40;
+
+/// Recortado a `max` caracteres (con «…»), sin caracteres de control; None si queda vacío.
+fn short(text: &str, max: usize) -> Option<String> {
+    let mut chars = text.chars().map(|c| if c.is_control() { ' ' } else { c });
+    let mut out: String = chars.by_ref().take(max).collect();
+    if chars.next().is_some() {
+        out.push('…');
+    }
+    chat::clean(&out, max + 1)
+}

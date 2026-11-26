@@ -700,6 +700,8 @@ export interface Platform {
   remoteChatClose(id: string): Promise<boolean>;
   /** Las frases que el teléfono ofrece para mandar a la consola. */
   remoteChatPhrases(phrases: string[]): Promise<void>;
+  /** Notificación del sistema; sin `always`, solo si la consola no está al frente. Devuelve si se mostró. */
+  remoteNotify(title: string, body: string, always: boolean): Promise<boolean>;
   onRemoteChat(handler: (chat: ConsoleChat) => void): Promise<() => void>;
 
   // Importar y exportar letras (features/transfer)

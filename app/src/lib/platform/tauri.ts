@@ -108,6 +108,7 @@ export const tauriPlatform: Platform = {
   remoteChatSend: (to, text, replies) => invoke("plugin:remote|remote_chat_send", { to, text, replies }),
   remoteChatClose: (id) => invoke("plugin:remote|remote_chat_close", { id }),
   remoteChatPhrases: (phrases) => invoke("plugin:remote|remote_chat_phrases", { phrases }),
+  remoteNotify: (title, body, always) => invoke("plugin:remote|remote_notify", { title, body, always }),
   onRemoteChat: (handler) => listen<ConsoleChat>("remote-chat", (event) => handler(event.payload)),
   transferImportPick: (title, filterName) => invoke("plugin:transfer|transfer_import_pick", { title, filterName }),
   transferImportApply: (onConflict, planName, importedSuffix) =>

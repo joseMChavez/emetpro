@@ -91,6 +91,23 @@
       </div>
     </div>
     <div class="presets">
+      <h3>{t("chat.notify.title")}</h3>
+      <p class="muted small">{t("chat.notify.hint")}</p>
+      <div class="choices" role="radiogroup" aria-label={t("chat.notify.title")}>
+        <label class="check">
+          <input type="radio" name="remote-notify" checked={settings.remoteNotify === "app"} onchange={() => setSetting("remoteNotify", "app")} />
+          {t("chat.notify.app")}
+        </label>
+        <label class="check">
+          <input type="radio" name="remote-notify" checked={settings.remoteNotify === "background"} onchange={() => setSetting("remoteNotify", "background")} />
+          {t("chat.notify.background")}
+        </label>
+        <label class="check">
+          <input type="radio" name="remote-notify" checked={settings.remoteNotify === "always"} onchange={() => setSetting("remoteNotify", "always")} />
+          {t("chat.notify.always")}
+        </label>
+      </div>
+
       <h3>{t("chat.settings.notes")}</h3>
       <p class="muted small">{t("chat.settings.notesHint")}</p>
       {#each notePresets() as note, i (i)}
@@ -137,6 +154,7 @@
   .card { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
   h2 { font-size: 16px; }
   .check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .choices { display: flex; flex-direction: column; gap: 6px; }
   .pair { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
   /* Fondo blanco siempre: los lectores de QR fallan con el tema oscuro. */
   .qr { flex: none; width: 220px; padding: 8px; background: #fff; border-radius: 10px; }

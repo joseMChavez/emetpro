@@ -46,6 +46,7 @@ pub fn plugin() -> TauriPlugin<Wry> {
             commands::remote_chat_send,
             commands::remote_chat_close,
             commands::remote_chat_phrases,
+            commands::remote_notify,
         ])
         .setup(|app, _api| {
             let key = load_key(app);

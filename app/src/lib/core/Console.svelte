@@ -463,6 +463,26 @@
     untrack(() => platform.remoteChatPhrases(list).catch(() => {}));
   });
 
+  // Lo que llega del remoto, también como notificación del sistema si así se eligió en Ajustes: siempre, o solo
+  // si la consola no está al frente (tapada por la salida, minimizada o detrás de otra aplicación; lo mira el
+  // backend). En escritorios que no minimizan (Hyprland…) la consola casi siempre está al frente: «siempre».
+  const notified = new Set<string>();
+  $effect(() => {
+    const fresh = chatIncoming.filter((note) => !notified.has(note.id));
+    for (const note of fresh) notified.add(note.id);
+    const mode = settings.remoteNotify;
+    if (mode === "app") return;
+    untrack(() => {
+      for (const note of fresh) {
+        const [title, body] =
+          note.from !== null
+            ? [t("chat.notify.sayTitle", { name: personName(note.from) }), note.text]
+            : [t("chat.notify.answerTitle", { name: personName(note.answer?.by ?? null), answer: answerText(note) }), note.text];
+        platform.remoteNotify(title, body, mode === "always").catch(() => {});
+      }
+    });
+  });
+
   // Miniaturas del PDF en pantalla para los teléfonos. Solo con teléfonos conectados.
   $effect(() => {
     const content = output.content;
