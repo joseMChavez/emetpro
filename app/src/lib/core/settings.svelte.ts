@@ -2,7 +2,8 @@
 // Cada ajuste tiene un valor inicial: restablecer es borrar la clave de la base.
 // Las dos ventanas comparten los ajustes: el backend avisa de cada cambio a ambas.
 import type { Locale } from "$lib/i18n/index.svelte";
-import { platform, type OutputStyle, type StoredSettings } from "$lib/platform";
+import type { Message } from "$lib/core/messages";
+import { platform, type OutputStyle, type StoreProblem, type StoredSettings } from "$lib/platform";
 import type { ThemeChoice } from "$lib/core/theme.svelte";
 
 const isString = (v: unknown): v is string => typeof v === "string";
@@ -61,8 +62,14 @@ function initial(): Settings {
 
 export const settings = $state<Settings>(initial());
 
-/** Último fallo al guardar; la consola lo muestra para que no pase desapercibido. */
-export const storage = $state({ error: null as string | null });
+/** Último fallo al guardar y, si la base no se pudo abrir, por qué; la consola lo muestra para que no pase desapercibido. */
+export const storage = $state({ error: null as string | null, problem: null as StoreProblem | null });
+
+/** Qué decirle al usuario cuando la base no se pudo abrir: el motivo y qué hacer. */
+export function storeProblemMessage(problem: StoreProblem): Message {
+  if (problem.code === "other") return { key: "store.other", params: { message: problem.message } };
+  return { key: `store.${problem.code}` };
+}
 
 function apply(stored: StoredSettings) {
   for (const key of KEYS) {
@@ -138,6 +145,12 @@ export async function loadSettings({ migrate }: { migrate: boolean }) {
     if (migrate) await migrateLegacy(stored);
   } catch (e) {
     failed("leer", e);
+  }
+  if (migrate) {
+    platform
+      .storeStatus()
+      .then((s) => (storage.problem = s.problem))
+      .catch(() => {});
   }
   platform.onSettingsChanged(apply).catch(() => {});
 }

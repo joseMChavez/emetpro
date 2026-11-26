@@ -18,7 +18,7 @@ pub fn plugin() -> TauriPlugin<Wry> {
             commands::settings_get,
             commands::settings_set,
             commands::settings_reset,
-            commands::store_path,
+            commands::store_status,
         ])
         .build()
 }

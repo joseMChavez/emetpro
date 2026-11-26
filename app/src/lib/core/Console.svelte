@@ -14,7 +14,7 @@
   import { pageCount } from "$lib/features/output/pdf";
   import { platform, type MonitorInfo, type OutputContent, type OutputState, type OutputStyle, type VideoTime } from "$lib/platform";
   import { formatDuration, init as initObs, obs } from "$lib/features/stream/obs.svelte";
-  import { setSetting, settings, storage } from "$lib/core/settings.svelte";
+  import { setSetting, settings, storage, storeProblemMessage } from "$lib/core/settings.svelte";
   import { setTheme, theme, type ThemeChoice } from "$lib/core/theme.svelte";
   import { loadScripture } from "$lib/features/bible/scripture";
   import { followVersion } from "$lib/features/bible/bibles.svelte";
@@ -564,8 +564,15 @@
     </div>
   </header>
 
-  {#if outputMonitorLost || error || storage.error}
+  {#if outputMonitorLost || error || storage.error || storage.problem}
     <div class="alerts">
+      {#if storage.problem}
+        {@const message = storeProblemMessage(storage.problem)}
+        <p class="alert" role="alert">
+          <span>{t(message.key, message.params)}</span>
+          <button class="btn ghost" onclick={() => (storage.problem = null)} aria-label={t("error.dismiss")}>✕</button>
+        </p>
+      {/if}
       {#if storage.error}
         <p class="alert" role="alert">
           <span>{t("error.storage", { message: storage.error })}</span>
