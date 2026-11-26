@@ -78,6 +78,15 @@ export function thumbOrder(page: number, total: number): number[] {
   return order;
 }
 
+/** Deja pasar lo pendiente (clics, mensajes) antes de seguir. Un MessageChannel no se frena con la ventana oculta. */
+function yieldToEvents(): Promise<void> {
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => resolve();
+    channel.port2.postMessage(null);
+  });
+}
+
 /** Prepara las miniaturas del PDF `path` para los teléfonos: una vez por documento, en segundo plano,
  *  empezando por la página `page`. Con null (otra cosa en pantalla, en negro, sin teléfonos) no hace nada:
  *  las ya dibujadas se guardan hasta el próximo PDF, así volver a él no las dibuja otra vez. */
@@ -99,8 +108,8 @@ export async function syncThumbs(path: string | null, page: number) {
       } catch {
         // Una página que no se pudo dibujar: el teléfono muestra su número en su lugar.
       }
-      // Que la consola siga respondiendo mientras tanto.
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      // Que la consola siga respondiendo mientras tanto, sin setTimeout: con la consola tapada se frena.
+      await yieldToEvents();
     }
   } catch {
     // Sin miniaturas el teléfono sigue funcionando: muestra los números de página.

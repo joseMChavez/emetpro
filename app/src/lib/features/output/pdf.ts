@@ -68,7 +68,9 @@ export async function pageJpeg(url: string, pageNumber: number, width: number): 
   canvas.width = Math.floor(viewport.width);
   canvas.height = Math.floor(viewport.height);
   try {
-    await page.render({ canvas, viewport }).promise;
+    // «print»: pdf.js no espera a requestAnimationFrame, que se detiene cuando la ventana no se ve (con un solo
+    // monitor, la salida tapa la consola) y dejaba las miniaturas del teléfono a medias.
+    await page.render({ canvas, viewport, intent: "print" }).promise;
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.75));
     if (!blob) throw new Error("toBlob");
     return new Uint8Array(await blob.arrayBuffer());
